@@ -1,0 +1,36 @@
+{
+    "extends": [
+      "airbnb-base",
+      "prettier",
+      "plugin:@typescript-eslint/recommended"
+    ],
+    "env": {
+      "jest": true,
+      "node": true
+    },
+    "rules": {
+      "prettier/prettier": ["error"],
+      "import/extensions": "off",
+      "@typescript-eslint/explicit-module-boundary-types": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+      "import/prefer-default-export": "off",
+      "import/no-extraneous-dependencies": [
+        "error",
+        {
+          "devDependencies": ["**/*.test.ts", "**/*.spec.ts"]
+        }
+      ],
+      "camelcase": "off"
+    },
+    "plugins": ["prettier", "@typescript-eslint", "import"],
+    "settings": {
+      "import/parsers": {
+        "@typescript-eslint/parser": [".ts"]
+      },
+      "import/resolver": {
+        "typescript": {
+          "alwaysTryTypes": true
+        }
+      }
+    }
+  }

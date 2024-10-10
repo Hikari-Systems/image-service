@@ -1,0 +1,56 @@
+{
+  "server": {
+    "port": 3000
+  },
+  "log": {
+    "level": "debug"
+  },
+  "redis": {
+    "enabled": "false"
+  },
+  "imageMetadata": {
+    "parentPath": "/metadata"
+  },
+  "imagemagick": {
+    "bin": "/usr/bin/convert"
+  },
+  "uploadDir": "/tmp",
+  "s3": {
+    "bucketName": "",
+    "accessKeyId": "",
+    "secretAccessKey": ""
+  },
+  "cloudfront": {
+    "url": "",
+    "expirySeconds": "10100",
+    "keypairId": "",
+    "privateKey": "",
+    "privateKeyFile": ""
+  },
+  "resize": {
+    "processing":" deferred",
+    "sizeKeys": "small,medium,large",
+    "original": {
+      "mimeType": "image/png",
+      "extension": ".png"
+    },
+    "small": {
+      "width": 100,
+      "height": 100,
+      "mimeType": "image/jpg",
+      "extension": ".jpg"
+    },
+    "medium": {
+      "width": 200,
+      "height": 200,
+      "mimeType": "image/jpg",
+      "extension": ".jpg"
+    },
+    "large": {
+      "width": 400,
+      "height": 400,
+      "mimeType": "image/png",
+      "extension": ".png"
+    }
+  }
+}
