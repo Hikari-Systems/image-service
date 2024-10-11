@@ -9,6 +9,7 @@ const imageMagick = async (
   destPath: string,
   w: number,
   h: number,
+  extraResizeOpts: string,
 ): Promise<string> => {
   const command = config.get('imagemagick:bin');
   const resizeArgs: string[] = [
@@ -22,6 +23,9 @@ const imageMagick = async (
   if (w > 0 || h > 0) {
     resizeArgs.push('-resize');
     resizeArgs.push(`${w}x${h}`);
+  }
+  if (extraResizeOpts !== '') {
+    extraResizeOpts.split(' ').forEach((x) => resizeArgs.push(x));
   }
   resizeArgs.push(sourcePath);
   resizeArgs.push(destPath);
@@ -43,11 +47,12 @@ export const resizeImage = async (
   source: string,
   w: number,
   h: number,
+  extraResizeOpts: string,
   ext: string,
 ): Promise<string> => {
   log.debug(
     `Resize requested: size=${w}x${h}px sourcePath=${source} ext=${ext}`,
   );
   const destPath = await tmpName({ postfix: ext });
-  return imageMagick(source, destPath, w, h);
+  return imageMagick(source, destPath, w, h, extraResizeOpts);
 };

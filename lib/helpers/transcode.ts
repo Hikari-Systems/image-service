@@ -53,6 +53,7 @@ const buildScaler =
       inFilePath,
       parseInt(`${config.get(`resize:${sizeKey}:width`)}`, 10),
       parseInt(`${config.get(`resize:${sizeKey}:height`)}`, 10),
+      config.get(`resize:${sizeKey}:extraOpts`) || '',
       extension,
     );
     const toSaveAs = `${img.category}-${img.id}-${sizeKey}${extension}`;
@@ -114,7 +115,14 @@ const transcodeImage = async (
       () => unlink(sanitisedImagePath),
     );
   } else {
-    const origResized = await resizeImage(localSourcePath, -1, -1, extension);
+    const originalExtraOpts = config.get('resize:original:extraOpts');
+    const origResized = await resizeImage(
+      localSourcePath,
+      -1,
+      -1,
+      originalExtraOpts,
+      extension,
+    );
     await s3Save(origResized, origDestS3Path, mimeType).finally(() =>
       unlink(origResized),
     );

@@ -111,6 +111,62 @@ router.get(
   },
 );
 
+router.get(
+  '/api/image/s/:id/:size',
+  async (req: LocalRequest, res: LocalResponse, next: LocalNextFunction) => {
+    const { id, size } = req.params;
+    log.debug(`Get image urls for ${id} resized as ${size}`);
+    try {
+      const image = await imageGet(id);
+      if (!image) {
+        log.debug(`Image not found: ${id}`);
+        return res.status(404).send(`Image not found: ${id}`);
+      }
+
+      const sc = (image.resizedFiles || []).filter(
+        (x: ScaledImageType) => x.size === size,
+      );
+      if (sc.length > 0) {
+        log.debug(
+          `Resized version found for size ${size} in ${JSON.stringify(image)}`,
+        );
+        const signed = await getCfSignedUrl(sc[0].s3Path);
+        return res.status(200).json({ url: signed });
+      }
+      if (image.originalS3Path) {
+        log.debug(
+          `No resized version found in ${JSON.stringify(
+            image,
+          )} - serving as original`,
+        );
+        const signed = await getCfSignedUrl(image.originalS3Path);
+        return res.status(200).json({ url: signed });
+      }
+      if (image.downloadedS3Path) {
+        log.debug(
+          `No processed version found in ${JSON.stringify(
+            image,
+          )} - serving as downloaded`,
+        );
+        const signed = await getCfSignedUrl(image.downloadedS3Path);
+        return res.status(200).json({ url: signed });
+      }
+      if (image.sourceUrl && image.sourceUrl !== '') {
+        log.debug(
+          `No downloaded or processed version found in ${JSON.stringify(
+            image,
+          )} - serving as source url`,
+        );
+        return res.status(200).json({ url: image.sourceUrl });
+      }
+      throw new Error(`No usable url for image ${id}`);
+    } catch (err) {
+      log.error(`Error getting image id=${id}`, err);
+      return next(err);
+    }
+  },
+);
+
 router.post(
   '/api/image/:id/transcode',
   async (req: LocalRequest, res: LocalResponse, next: LocalNextFunction) => {
