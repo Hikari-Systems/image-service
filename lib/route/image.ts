@@ -250,7 +250,7 @@ router.post(
     const forceImmediateResizeBool: boolean =
       forceImmediateResize?.toLowerCase().trim() === 'true';
     log.debug(
-      `Image uploaded: path=${req.file.path} forceImmediateResize=${forceImmediateResizeBool}`,
+      `Image uploaded: path=${req.file.path} originalName=${req.file.originalname} forceImmediateResize=${forceImmediateResizeBool}`,
     );
     return processImage(
       req.file.path,

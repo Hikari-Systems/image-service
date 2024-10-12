@@ -147,9 +147,9 @@ const doProcessImage = async (
   doTranscode: boolean,
   toOverwrite: ImageType | undefined,
 ): Promise<ImageType> => {
-  log.debug(
-    `doProcessImage: image=${localSourcePath} cat=${category} url=${url} doTranscode=${doTranscode}`,
-  );
+  // log.debug(
+  //   `doProcessImage: image=${localSourcePath} cat=${category} url=${url} doTranscode=${doTranscode}`,
+  // );
   const baseToInsert = toOverwrite || { id: v4() };
 
   // because we know that we're downloading fresh, clear the old resizes
