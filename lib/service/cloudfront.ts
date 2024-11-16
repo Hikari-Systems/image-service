@@ -41,8 +41,9 @@ export const getCfSignedUrl = async (s3Path: string): Promise<string> => {
   }
   const expiresAt = dayjs().utc().add(expirySeconds, 'second');
   const dateLessThan = expiresAt.toDate().toString();
+  const signedUrl = signer({ url: fullCfUrl, dateLessThan });
   log.debug(
-    `Signing S3 path: ${bucket}${s3Path} as cloudfront url: ${fullCfUrl} expires ${dateLessThan}`,
+    `Signing S3 path: ${bucket}/${s3Path} as cloudfront url: ${signedUrl} expires ${dateLessThan}`,
   );
-  return signer({ url: fullCfUrl, dateLessThan });
+  return signedUrl;
 };
