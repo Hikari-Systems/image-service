@@ -115,7 +115,7 @@ const transcodeImage = async (
       () => unlink(sanitisedImagePath),
     );
   } else {
-    const originalExtraOpts = config.get('resize:original:extraOpts');
+    const originalExtraOpts = config.get('resize:original:extraOpts') || '';
     const origResized = await resizeImage(
       localSourcePath,
       -1,
