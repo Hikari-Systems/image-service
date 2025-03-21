@@ -14,7 +14,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.666.0",
     "@aws-sdk/cloudfront-signer": "^3.662.0",
-    "@hikari-systems/hs.utils": "^0.0.31",
+    "@hikari-systems/hs.utils": "^0.0.51",
     "dayjs": "^1.11.13",
     "death": "^1.1.0",
     "dompurify": "^3.1.7",
