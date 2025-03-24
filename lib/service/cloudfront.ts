@@ -22,7 +22,12 @@ function signerMaker() {
     const keyFile = (config.get(`cloudfront:privateKeyFile`) || '').trim();
     if (keyText !== '') {
       log.debug(`Found cloudfront key as config file text`);
-      return (s: any) => getSignedUrl({ ...s, keyPairId, privateKey: keyText });
+      const rebuiltKey = `-----BEGIN PRIVATE KEY-----
+${keyText.replace(/(.{64})/g, '$1\n')}
+-----END PRIVATE KEY-----`;
+
+      return (s: any) =>
+        getSignedUrl({ ...s, keyPairId, privateKey: rebuiltKey });
     }
     if (keyFile !== '') {
       log.debug(`Found cloudfront key file: ${keyFile}`);
