@@ -5,9 +5,6 @@
   "log": {
     "level": "debug"
   },
-  "redis": {
-    "enabled": "false"
-  },
   "imageMetadata": {
     "parentPath": "/metadata"
   },
