@@ -20,12 +20,12 @@ const imageMagick = async (
     'map',
     `${config.get('resize:mapLimit') || 32}MiB`,
   ];
+  if (extraResizeOpts !== '') {
+    extraResizeOpts.split(' ').forEach((x) => resizeArgs.push(x));
+  }
   if (w > 0 || h > 0) {
     resizeArgs.push('-resize');
     resizeArgs.push(`${w}x${h}`);
-  }
-  if (extraResizeOpts !== '') {
-    extraResizeOpts.split(' ').forEach((x) => resizeArgs.push(x));
   }
   resizeArgs.push(sourcePath);
   resizeArgs.push(destPath);
@@ -51,7 +51,7 @@ export const resizeImage = async (
   ext: string,
 ): Promise<string> => {
   log.debug(
-    `Resize requested: size=${w}x${h}px sourcePath=${source} ext=${ext}`,
+    `Resize requested: ${extraResizeOpts} size=${w}x${h}px sourcePath=${source} ext=${ext}`,
   );
   const destPath = await tmpName({ postfix: ext });
   return imageMagick(source, destPath, w, h, extraResizeOpts);
