@@ -47,8 +47,14 @@
       "width": 400,
       "height": 400,
       "mimeType": "image/png",
+      "extension": ".png"
+    },
+    "largeSquare": {
+      "width": 400,
+      "height": 400,
+      "mimeType": "image/png",
       "extension": ".png",
-      "extraOpts": "-gravity center -crop min(w,h)xmin(w,h)+0+0"
+      "extraOpts": "-gravity center -extent %[fx:min(w,h)]x%[fx:min(w,h)]"
     }
   }
 }
