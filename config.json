@@ -9,7 +9,7 @@
     "parentPath": "/metadata"
   },
   "imagemagick": {
-    "bin": "/usr/bin/convert"
+    "bin": "/usr/bin/magick"
   },
   "uploadDir": "/tmp",
   "s3": {
@@ -47,7 +47,8 @@
       "width": 400,
       "height": 400,
       "mimeType": "image/png",
-      "extension": ".png"
+      "extension": ".png",
+      "extraOpts": "-gravity center -crop min(w,h)xmin(w,h)+0+0"
     }
   }
 }

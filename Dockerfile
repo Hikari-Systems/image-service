@@ -24,10 +24,23 @@ RUN npm run build
 
 COPY static /app/static
 
+FROM debian:12-slim AS imagemagick
+
+WORKDIR /app
+RUN apt update && apt install -y build-essential curl libtool automake autoconf pkg-config libwebp-dev libgd-dev liblcms2-dev libjpeg-dev libpng-dev libtiff-dev libxpm-dev libfreetype6-dev libgif-dev librsvg2-dev libxml2-dev libopenexr-dev
+RUN curl -L https://imagemagick.org/archive/ImageMagick.tar.gz | tar xz
+RUN cd ImageMagick-* && ./configure --prefix=/app/imbuild --enable-static --disable-shared \
+        --with-heic=yes --with-jpeg=yes  --with-png=yes --with-openexr=yes --with-rsvg=yes \
+        && make && make install
+
 FROM node:22
 
 WORKDIR /app
 
+ENV MAGICK_CONFIGURE_PATH=/etc/ImageMagick-7
+
+COPY --from=imagemagick /app/imbuild /usr
+COPY --from=imagemagick /app/imbuild/etc /etc
 COPY --from=builder /app/node_modules /app/node_modules
 COPY --from=builder /app/es5 /app/es5
 COPY --from=builder /app/static /app/static

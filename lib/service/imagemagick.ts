@@ -13,6 +13,7 @@ const imageMagick = async (
 ): Promise<string> => {
   const command = config.get('imagemagick:bin');
   const resizeArgs: string[] = [
+    sourcePath,
     '-limit',
     'memory',
     `${config.get('resize:memoryLimit') || 32}MiB`,
@@ -27,7 +28,6 @@ const imageMagick = async (
     resizeArgs.push('-resize');
     resizeArgs.push(`${w}x${h}`);
   }
-  resizeArgs.push(sourcePath);
   resizeArgs.push(destPath);
   log.debug(`Converting ${sourcePath} to ${destPath}`);
   // log.debug(`Command: ${command} ${resizeArgs.join(' ')}`);
