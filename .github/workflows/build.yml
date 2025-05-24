@@ -16,9 +16,9 @@ jobs:
         platform: [amd64, arm64]
         include:
           - platform: amd64
-            runner: blacksmith-2vcpu-ubuntu-2204
+            runner: blacksmith-2vcpu-ubuntu-2404
           - platform: arm64
-            runner: blacksmith-2vcpu-ubuntu-2204-arm
+            runner: blacksmith-2vcpu-ubuntu-2404-arm
     services:
       registry:
         image: registry:3.0
