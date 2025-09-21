@@ -2,17 +2,11 @@ services:
   app:
     build:
       context: .
-      secrets: 
-        - ghapikey
     ports:
-      - '3000:3000'
+      - '3001:3000'
     read_only: true
     volumes:
       - '/tmp:/tmp'
       - '../../configs/image-service:/sandbox'
       - './metadata:/metadata'
       # - './static:/app/static'
-
-secrets:
-  ghapikey:
-    environment: GH_API_KEY
