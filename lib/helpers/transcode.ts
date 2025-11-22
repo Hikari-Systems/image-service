@@ -191,8 +191,12 @@ export const processImage = (
     toOverwrite,
   );
 
-export const getExtensionFromPath = (path: string): string =>
-  `.${path.split('.').pop()}`;
+export const getExtensionFromPath = (path: string): string => {
+  if (path.indexOf('.') < 0) {
+    return '.bin';
+  }
+  return `.${path.split('.').pop()}`;
+};
 
 // export const downloadAndAdd = (
 //   imgUrl: string,
