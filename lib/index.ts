@@ -3,6 +3,7 @@ import { timingMiddleware } from '@hikari-systems/hs.utils';
 import express from 'express';
 import path from 'path';
 import imageRoutes from './route/image';
+import categoryRoutes from './route/category';
 
 // const log = logging('index');
 
@@ -13,6 +14,7 @@ app.get('/healthcheck', (_req, res) => res.status(200).send('OK'));
 
 app.use(timingMiddleware);
 app.use(imageRoutes);
+app.use(categoryRoutes);
 
 app.use('/test', express.static(path.join(__dirname, '../static')));
 

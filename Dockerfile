@@ -6,9 +6,6 @@ WORKDIR /app
 COPY package.json /app/package.json
 COPY package-lock.json /app/package-lock.json
 COPY .npmrc /app/.npmrc
-RUN --mount=type=secret,id=ghapikey,required \
-    export GH_API_KEY="$(cat /run/secrets/ghapikey)"; \ 
-    echo "//npm.pkg.github.com/:_authToken=${GH_API_KEY}" >> ~/.npmrc
 RUN npm ci
 
 COPY .eslintrc.json .eslintignore .prettierrc .prettierignore tsconfig.json config.json /app/

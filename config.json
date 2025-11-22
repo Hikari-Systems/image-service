@@ -25,7 +25,7 @@
     "privateKeyFile": ""
   },
   "resize": {
-    "processing":" deferred",
+    "processing": "deferred",
     "sizeKeys": "small,medium,large",
     "original": {
       "mimeType": "image/png",
