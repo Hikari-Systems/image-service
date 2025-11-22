@@ -326,7 +326,9 @@ Contributions are welcome! Please follow these guidelines:
 
 ## License
 
-[Add your license here]
+This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+
+For more information about the Apache License 2.0, visit [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0).
 
 ## Support
 
