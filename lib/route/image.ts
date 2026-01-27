@@ -187,55 +187,6 @@ router.post(
   },
 );
 
-// router.post(
-//   '/api/image/:category/url',
-//   (req: LocalRequest, res: LocalResponse, next: LocalNextFunction) => {
-//     const { url, extension, forceImmediateResize } = req.query as {
-//       url: string;
-//       extension: string;
-//       forceImmediateResize: string;
-//     };
-//     const { category } = req.params;
-//     const force = ((req.query.force as string) || 'no').trim() === 'yes';
-//     const forceImmediateResizeBool: boolean =
-//       ((forceImmediateResize as string) || 'no').trim() === 'yes';
-//     return imageListByUrlAndCategory(url, category)
-//       .then((found: ImageType[]): Promise<ImageType> => {
-//         if (found.length === 0) {
-//           log.debug(`URL not found in DB - downloading: ${url}`);
-//           return downloadAndAdd(
-//             url as string,
-//             category,
-//             extension as string,
-//             forceImmediateResizeBool,
-//             undefined,
-//           );
-//         }
-//         if (force) {
-//           log.debug(`URL found in DB, but forced downloading: ${url}`);
-//           return downloadAndAdd(
-//             url as string,
-//             category,
-//             extension as string,
-//             forceImmediateResizeBool,
-//             found[0],
-//           );
-//         }
-//         log.debug(
-//           `URL found in DB, and no forced update so returning: ${url} ${JSON.stringify(
-//             found[0],
-//           )}`,
-//         );
-//         return Promise.resolve(found[0]);
-//       })
-//       .then((added: ImageType) => res.status(201).json(added))
-//       .catch((err: Error) => {
-//         log.error(`Error downloading image from url: ${url}`, err);
-//         return next(err);
-//       });
-//   },
-// );
-
 router.post(
   '/api/image/:category',
   upload.single('image'),
