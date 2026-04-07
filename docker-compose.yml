@@ -10,3 +10,33 @@ services:
       - '../../configs/image-service:/sandbox'
       - './metadata:/metadata'
       # - './static:/app/static'
+    environment:
+      imageMetadata__storage: db
+      db__host: image-service-db
+      db__username: image-service
+      db__password: image-service
+      db__database: image-service
+    healthcheck:
+      test: [ "CMD-SHELL", "/app/node -e \"require('http').get('http://localhost:3000/healthcheck', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\"" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 1s
+    depends_on:
+      image-service-db:
+        condition: service_healthy
+    links:
+      - image-service-db
+
+  image-service-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: image-service
+      POSTGRES_USER: image-service
+      POSTGRES_PASSWORD: image-service
+    ports: ["5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -h image-service-db -U image-service"]
+      interval: 2s
+      timeout: 5s
+      retries: 20

@@ -6,7 +6,8 @@
     "level": "debug"
   },
   "imageMetadata": {
-    "parentPath": "/metadata"
+    "parentPath": "/metadata",
+    "storage": "file"
   },
   "imagemagick": {
     "bin": "/usr/bin/magick"
