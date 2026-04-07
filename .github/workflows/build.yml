@@ -57,6 +57,7 @@ jobs:
           context: .
           platforms: linux/${{ matrix.platform }}
           push: true
+          provenance: false
           tags: |
             ghcr.io/hikari-systems/${{ env.REPO_NAME }}:${{ github.sha }}-${{ matrix.platform }}
             localhost:5000/${{ env.REPO_NAME }}:${{ github.sha }}-${{ matrix.platform }}
