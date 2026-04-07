@@ -3,7 +3,7 @@ const { build } = require('esbuild');
 const path = require('path');
 
 build({
-  entryPoints: ['es5/server.js'],
+  entryPoints: ['es5/lib/server.js'],
   bundle: true,
   platform: 'node',
   outfile: 'dist/server.bundle.js',

@@ -1,4 +1,4 @@
-FROM node:22 AS builder
+FROM node:24 AS builder
 
 WORKDIR /app
 
@@ -10,6 +10,7 @@ RUN npm ci
 
 COPY .eslintrc.json .eslintignore .prettierrc .prettierignore tsconfig.json config.json /app/
 COPY lib /app/lib
+COPY migrations /app/migrations
 COPY __tests__ /app/__tests__
 
 RUN npm run build
@@ -30,7 +31,7 @@ RUN cd ImageMagick-* && ./configure --prefix=/app/imbuild --enable-static --disa
         && make && make install
 
         # --- Runtime image ---
-FROM debian:12-slim
+FROM debian:bookworm-slim
 
 WORKDIR /app
 ENV MAGICK_CONFIGURE_PATH=/etc/ImageMagick-7
@@ -60,6 +61,7 @@ COPY --from=imagemagick /app/imbuild/etc /etc
 COPY --from=builder /usr/local/bin/node /app/node
 COPY --from=builder /app/dist/* /app/dist/
 COPY --from=builder /app/static /app/static
+COPY --from=builder /app/es5/migrations /app/migrations
 COPY --from=builder /app/config.json /app/config.json
 RUN echo 'module.exports = {};' > /app/dist/xhr-sync-worker.js
 

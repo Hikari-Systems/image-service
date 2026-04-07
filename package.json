@@ -16,6 +16,11 @@
     "@aws-sdk/client-s3": "^3.666.0",
     "@aws-sdk/cloudfront-signer": "^3.662.0",
     "@hikari-systems/hs.utils": "^0.0.56",
+    "knex": "^3.1.0",
+    "lodash.camelcase": "^4.3.0",
+    "lodash.snakecase": "^4.1.1",
+    "pg": "^8.16.0",
+    "pg-query-stream": "^4.10.0",
     "dayjs": "^1.11.13",
     "death": "^1.1.0",
     "dompurify": "^3.1.7",
@@ -29,6 +34,8 @@
   "devDependencies": {
     "@tsconfig/node22": "^22.0.0",
     "@types/death": "^1.1.5",
+    "@types/lodash.camelcase": "^4.3.9",
+    "@types/lodash.snakecase": "^4.1.9",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.12",
     "@types/dompurify": "^3.0.5",
@@ -47,6 +54,9 @@
     "jest": "^29.7.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "langsmith": "0.4.6"
   },
   "main": "index.js",
   "license": "Apache-2.0"

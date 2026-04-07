@@ -1,52 +1,34 @@
-import { config, logging } from '@hikari-systems/hs.utils';
-import { v4 } from 'uuid';
-import { readFile } from 'fs';
-import { writeFile } from 'fs/promises';
+import { config } from '@hikari-systems/hs.utils';
+import knex, { Knex } from 'knex';
 import { ImageType } from '../types/types';
+import { imageGet as fileGet, imageUpsert as fileUpsert } from './image-file';
+import imageDbFactory from './image-db';
+import knexConfig from '../knexfile';
 
-const log = logging('model:image');
-const imagePath = config.get('imageMetadata:parentPath');
+interface ImageBackend {
+  get: (id: string) => Promise<ImageType | null>;
+  upsert: (image: ImageType) => Promise<ImageType>;
+}
 
-export const imageGet = async (id: string): Promise<ImageType | null> =>
-  new Promise((resolve, reject) => {
-    readFile(
-      `${imagePath}/${id}.json`,
-      {
-        encoding: 'utf-8',
-      },
-      (err, json) => {
-        if (err && err.code !== 'ENOENT') {
-          log.error(`Error loading image details for image ID=${id}`, err);
-          reject(err);
-        } else if (err) {
-          resolve(null);
-        } else {
-          resolve(JSON.parse(json) as ImageType);
-        }
-      },
-    );
-  });
+const getBackend = (() => {
+  let backend: ImageBackend | null = null;
+  return (): ImageBackend => {
+    if (!backend) {
+      const storage = (config.get('imageMetadata:storage') || 'file').trim();
+      if (storage === 'db') {
+        const db: Knex = knex(knexConfig.main);
+        const model = imageDbFactory(db);
+        backend = { get: model.get, upsert: model.upsert };
+      } else {
+        backend = { get: fileGet, upsert: fileUpsert };
+      }
+    }
+    return backend;
+  };
+})();
 
-export const imageUpsert = async (image: ImageType): Promise<ImageType> => {
-  const rewritten = { ...image, id: image?.id || v4() } as ImageType;
-  try {
-    await writeFile(
-      `${imagePath}/${rewritten.id}.json`,
-      JSON.stringify(rewritten),
-      {
-        encoding: 'utf-8',
-      },
-    );
-    return rewritten;
-  } catch (err) {
-    log.error(
-      `Error saving image details for image=${JSON.stringify(rewritten)}`,
-      err,
-    );
-    throw err;
-  }
-};
-// export const imageListByUrlAndCategory = async (
-//   url: string,
-//   category: string,
-// ): Promise<ImageType[]> => [] as ImageType[];
+export const imageGet = (id: string): Promise<ImageType | null> =>
+  getBackend().get(id);
+
+export const imageUpsert = (image: ImageType): Promise<ImageType> =>
+  getBackend().upsert(image);
