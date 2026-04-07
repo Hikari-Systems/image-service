@@ -1,0 +1,36 @@
+ <!DOCTYPE html>
+ <html>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.0/jquery.min.js"></script>
+<script type="text/javascript">
+  function doUpload() {
+    $('#response').text('Working ...');
+    var url = '../api/image/' +  $('#category').val() + '?forceImmediateResize=' + $('#forceImmediateResize').is(':checked');
+    var fileToUpload = new FormData();
+    fileToUpload.append('image', $('#file')[0].files[0]);
+
+    $.ajax({
+      url: url,
+      method: 'POST',
+      data: fileToUpload,
+      processData: false,
+      contentType: false,
+      success: function(data) {
+        $('#response').text(JSON.stringify(data));
+      },
+      error:  function (xhr, ajaxOptions, thrownError) {
+        $('#response').text(JSON.stringify('Error uploading file - aborted'));
+      }
+    });
+  }
+</script>
+<body>
+  <form action="../api/image/" onsubmit="return false;" enctype="multipart/form-data">
+    <input type="file" name="image" value="" id="file"/>
+    Category: <input type="text" name="category" value="default" id="category"/>
+    <input type="checkbox" name="forceImmediateResize" value="true" id="forceImmediateResize"/>
+    <button onclick="doUpload()">Upload</button>
+  </form>
+  <hr/>
+  <div id="response"></div>
+</body>
+</html>

@@ -1,0 +1,43 @@
+services:
+  image-service:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Env vars use __ as path separator with exact camelCase key names
+      # matching the config.json structure, e.g. imageMetadata__parentPath.
+      log__level: info
+      imageMetadata__storage: db
+      imageMetadata__parentPath: /metadata
+      db__host: postgres
+      db__port: 5432
+      db__database: image_service
+      db__username: image-service
+      db__password: image-service
+    volumes:
+      - metadata:/metadata
+      - ../../configs/image-service:/sandbox
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: image_service
+      POSTGRES_USER: image-service
+      POSTGRES_PASSWORD: image-service
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U image-service -d image_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  metadata:
+  pgdata:

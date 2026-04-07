@@ -1,0 +1,84 @@
+{
+  "server": {
+    "port": 3000
+  },
+  "log": {
+    "level": "debug"
+  },
+  "imageMetadata": {
+    "parentPath": "/metadata",
+    "storage": "file"
+  },
+  "imagemagick": {
+    "bin": "/usr/local/bin/magick"
+  },
+  "uploadDir": "/tmp",
+  "s3": {
+    "bucketName": "",
+    "accessKeyId": "",
+    "secretAccessKey": "",
+    "region": "us-east-1"
+  },
+  "cloudfront": {
+    "url": "",
+    "expirySeconds": 10100,
+    "keypairId": "",
+    "privateKey": "",
+    "privateKeyFile": ""
+  },
+  "db": {
+    "host": "localhost",
+    "port": 5432,
+    "database": "image_service",
+    "username": "image-service",
+    "password": "image-service",
+    "ssl": {
+      "enabled": false,
+      "verify": false,
+      "caCertFile": ""
+    },
+    "minpool": 0,
+    "maxpool": 10,
+    "debug": false
+  },
+  "resize": {
+    "processing": "deferred",
+    "memoryLimit": 256,
+    "mapLimit": 256,
+    "sizeKeys": "small,medium,large",
+    "original": {
+      "mimeType": "image/png",
+      "extension": ".png",
+      "extraOpts": ""
+    },
+    "small": {
+      "width": 100,
+      "height": 100,
+      "mimeType": "image/jpeg",
+      "extension": ".jpg",
+      "extraOpts": ""
+    },
+    "medium": {
+      "width": 200,
+      "height": 200,
+      "mimeType": "image/jpeg",
+      "extension": ".jpg",
+      "extraOpts": ""
+    },
+    "large": {
+      "width": 400,
+      "height": 400,
+      "mimeType": "image/png",
+      "extension": ".png",
+      "extraOpts": ""
+    },
+    "largeSquare": {
+      "width": 400,
+      "height": 400,
+      "mimeType": "image/png",
+      "extension": ".png",
+      "extraOpts": "-gravity center -extent %[fx:min(w,h)]x%[fx:min(w,h)]"
+    },
+    "scalingSets": {}
+  }
+}
