@@ -8,7 +8,7 @@ services:
       # matching the config.json structure, e.g. imageMetadata__parentPath.
       log__level: info
       imageMetadata__storage: db
-      imageMetadata__parentPath: /metadata
+      # imageMetadata__parentPath: /metadata
       db__host: postgres
       db__port: 5432
       db__database: image_service
@@ -20,7 +20,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/healthcheck || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   postgres:
     image: postgres:18
@@ -28,8 +32,7 @@ services:
       POSTGRES_DB: image_service
       POSTGRES_USER: image-service
       POSTGRES_PASSWORD: image-service
-    ports:
-      - "5432:5432"
+    ports: ["5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
