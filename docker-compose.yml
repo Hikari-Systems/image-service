@@ -17,6 +17,12 @@ services:
     volumes:
       - metadata:/metadata
       - ../../configs/image-service:/sandbox
+    healthcheck:
+      test: ["/app/image-service", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy

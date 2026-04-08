@@ -23,8 +23,44 @@ use services::imagemagick::ImageMagickService;
 use services::s3::S3Service;
 use state::AppState;
 
+/// Makes a raw HTTP/1.1 GET to /healthcheck using only stdlib TCP.
+/// Returns true on HTTP 200, false on any error or non-200 response.
+/// Invoked when the binary is called as: server healthcheck [hostname [port]]
+fn run_healthcheck(host: &str, port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let Ok(mut stream) = TcpStream::connect(format!("{host}:{port}")) else {
+        return false;
+    };
+    stream.set_read_timeout(Some(Duration::from_secs(4))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(4))).ok();
+
+    let req = "GET /healthcheck HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+
+    let mut response = String::new();
+    if stream.read_to_string(&mut response).is_err() {
+        return false;
+    }
+
+    response.starts_with("HTTP/1.1 200")
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        let host = std::env::args().nth(2).unwrap_or_else(|| "localhost".to_string());
+        let default_port = AppConfig::load().map(|c| c.server.port).unwrap_or(3000);
+        let port = std::env::args().nth(3)
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(default_port);
+        std::process::exit(if run_healthcheck(&host, port) { 0 } else { 1 });
+    }
+
     if let Err(e) = run().await {
         eprintln!("Fatal error: {:#}", e);
         std::process::exit(1);
