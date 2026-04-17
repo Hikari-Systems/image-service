@@ -108,7 +108,7 @@ fn rebuild_pem(raw_b64: &str) -> String {
 }
 
 /// CloudFront uses a slightly different base64 alphabet:
-/// replaces `+` with `-`, `/` with `_`, and `=` with `~`.
+/// replaces `+` with `-`, `/` with `~`, and `=` with `_`.
 fn cf_base64(s: String) -> String {
-    s.replace('+', "-").replace('/', "_").replace('=', "~")
+    s.replace('+', "-").replace('/', "~").replace('=', "_")
 }
