@@ -83,5 +83,7 @@ ENV MAGICK_CONFIGURE_PATH=/etc/ImageMagick-7
 USER nobody
 
 EXPOSE 3000
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["/app/image-service", "healthcheck"]
 
 CMD ["/app/image-service"]
