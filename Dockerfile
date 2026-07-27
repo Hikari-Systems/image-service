@@ -11,7 +11,12 @@ RUN apt-get update && apt-get install -y \
     librsvg2-dev libxml2-dev libopenexr-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -L https://imagemagick.org/archive/ImageMagick.tar.gz | tar xz
+# imagemagick.org/archive/ moved to GitHub Pages and now 404s, so source comes
+# from the GitHub release tags instead. Pinned for reproducible builds — bump
+# deliberately rather than tracking latest. `-f` makes curl fail on an HTTP
+# error rather than piping an HTML error page into tar.
+ARG IMAGEMAGICK_VERSION=7.1.2-28
+RUN curl -fL https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${IMAGEMAGICK_VERSION}.tar.gz | tar xz
 RUN cd ImageMagick-* && \
     ./configure \
         --prefix=/opt/imagemagick \
