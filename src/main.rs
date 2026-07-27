@@ -71,7 +71,9 @@ async fn run() -> Result<()> {
 
     hs_utils::server::run(port, move || {
         App::new()
-            .wrap(middleware::Logger::default())
+            // /healthcheck is polled constantly by the load balancer — keep it
+            // out of the request log.
+            .wrap(middleware::Logger::default().exclude("/healthcheck"))
             .app_data(app_state.clone())
             .route(
                 "/healthcheck",
