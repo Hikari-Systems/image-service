@@ -17,7 +17,8 @@
     "bucketName": "",
     "accessKeyId": "",
     "secretAccessKey": "",
-    "region": "us-east-1"
+    "region": "us-east-1",
+    "endpointUrl": ""
   },
   "cloudfront": {
     "url": "",

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use hs_utils::config::{
-    apply_env_overrides, deep_merge, deser_i64_or_str, deser_opt_i32_or_str, deser_u16_or_str,
-    deser_u32_or_str, prepare_config,
+    apply_env_overrides, deep_merge, deser_i64_or_str, deser_opt_bool_or_str, deser_opt_i32_or_str,
+    deser_u16_or_str, deser_u32_or_str, prepare_config,
 };
 pub use hs_utils::db::DbConfig;
 use serde::Deserialize;
@@ -55,6 +55,26 @@ pub struct S3Config {
     pub secret_access_key: String,
     #[serde(default = "default_region")]
     pub region: String,
+    /// Override the S3 endpoint — set this to point at MinIO or another S3-compatible
+    /// server for local testing. Empty means the real AWS endpoint for the region.
+    #[serde(rename = "endpointUrl", default)]
+    pub endpoint_url: String,
+    /// Path-style addressing (`host/bucket/key` rather than `bucket.host/key`).
+    /// Defaults to on whenever `endpointUrl` is set, since S3-compatible servers are
+    /// rarely reachable under per-bucket subdomains.
+    #[serde(
+        rename = "forcePathStyle",
+        default,
+        deserialize_with = "deser_opt_bool_or_str"
+    )]
+    pub force_path_style: Option<bool>,
+}
+
+impl S3Config {
+    pub fn force_path_style(&self) -> bool {
+        self.force_path_style
+            .unwrap_or(!self.endpoint_url.trim().is_empty())
+    }
 }
 
 fn default_region() -> String { "us-east-1".to_string() }
