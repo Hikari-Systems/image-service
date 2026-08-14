@@ -52,6 +52,12 @@
       "extension": ".png",
       "extraOpts": ""
     },
+    "transcodeSweep": {
+      "enabled": "false",
+      "intervalSeconds": "60",
+      "batchSize": "2",
+      "leaseSeconds": "300"
+    },
     "small": {
       "width": 100,
       "height": 100,

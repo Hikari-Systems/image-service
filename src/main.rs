@@ -33,6 +33,20 @@ async fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+/// `argv[1] == "transcode-sweep"` → `Some(batch override)`, where `argv[2]` is an
+/// optional image count. Returns `None` for a normal server start.
+///
+/// Parsed rather than handed to a CLI crate because this is the second subcommand
+/// in the binary and the first (`healthcheck`) is argv-matched too — a dependency
+/// would be more machinery than the feature.
+fn transcode_sweep_subcommand() -> Option<Option<u32>> {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() != Some("transcode-sweep") {
+        return None;
+    }
+    Some(args.next().and_then(|n| n.parse().ok()))
+}
+
 async fn run() -> Result<()> {
     let cfg = AppConfig::load().context("Failed to load application config")?;
 
@@ -66,6 +80,44 @@ async fn run() -> Result<()> {
         backend,
         config: cfg.clone(),
     });
+
+    // `server transcode-sweep [n]` — run one pass and exit, instead of serving.
+    //
+    // The same shape as the `healthcheck` subcommand, and for the same reason:
+    // it needs the service's own config, credentials and ImageMagick, so a
+    // shell script cannot stand in for it. Two things it buys that the in-process
+    // loop does not:
+    //
+    //   * an **external** scheduler can drive the sweep (a systemd timer, a cron
+    //     entry, a one-shot container) with `transcodeSweep.enabled` left false —
+    //     useful when you want the backlog cleared on a schedule you control
+    //     rather than on every replica independently;
+    //   * a **manual** trigger, to drain a backlog or check the claim behaves,
+    //     without waiting out an interval or restarting anything.
+    //
+    // It takes the same lease as the loop does, so running it by hand while the
+    // loop is also on is safe — the two cannot pick the same image.
+    if let Some(n) = transcode_sweep_subcommand() {
+        return services::sweeper::run_once(&app_state, n).await;
+    }
+
+    // The background pass that completes deferred variants. Gated here rather
+    // than inside the loop so the "it will do nothing" case is one line at
+    // startup instead of silence: only the Postgres backend can claim an image
+    // exclusively, and on the file backend every replica would transcode every
+    // image — worse than not sweeping at all.
+    if cfg.resize.transcode_sweep.is_enabled() {
+        if cfg.image_metadata.storage.trim() == "db" {
+            services::sweeper::spawn(app_state.clone().into_inner());
+        } else {
+            tracing::warn!(
+                "transcode sweep is enabled but imageMetadata.storage is {:?}; \
+                 only the db backend can claim an image exclusively, so the sweep \
+                 is disabled — set storage to \"db\" to use it",
+                cfg.image_metadata.storage
+            );
+        }
+    }
 
     let port = cfg.server.port;
 

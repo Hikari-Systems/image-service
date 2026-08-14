@@ -133,6 +133,13 @@ pub struct ResizeConfig {
     pub map_limit: u32,
     #[serde(default)]
     pub original: SizeConfig,
+    /// The background pass that finishes what an upload deferred. Like
+    /// [`Self::original`], a **named** field, so serde consumes it before the
+    /// flattened `sizes` map — which makes `transcodeSweep` a reserved word: it
+    /// can never be a size key, and must never appear in `sizeKeys` or a
+    /// `scalingSets` entry.
+    #[serde(rename = "transcodeSweep", default)]
+    pub transcode_sweep: TranscodeSweepConfig,
     /// Named size configs (small, medium, large, etc.) captured via flatten.
     #[serde(flatten)]
     pub sizes: HashMap<String, SizeConfig>,
@@ -140,9 +147,71 @@ pub struct ResizeConfig {
     pub scaling_sets: HashMap<String, String>,
 }
 
+/// The background pass that completes variants an upload deferred.
+///
+/// Without it, `resize.processing: "deferred"` — the shipped default — has no
+/// completion path whatsoever: nothing but an explicit
+/// `POST /api/image/{id}/transcode` ever produces those variants, so they simply
+/// never appear.
+#[derive(Debug, Deserialize, Clone)]
+pub struct TranscodeSweepConfig {
+    /// Off unless asked for: it spends CPU on a schedule.
+    #[serde(default, deserialize_with = "deser_opt_bool_or_str")]
+    pub enabled: Option<bool>,
+    /// Seconds between passes.
+    #[serde(
+        rename = "intervalSeconds",
+        default = "default_sweep_interval",
+        deserialize_with = "deser_u32_or_str"
+    )]
+    pub interval_seconds: u32,
+    /// Images claimed per pass. Deliberately small: transcoding competes with live
+    /// uploads for the same cores, and the point of deferring was to keep that work
+    /// off the request path, not to move a stampede somewhere else.
+    #[serde(
+        rename = "batchSize",
+        default = "default_sweep_batch",
+        deserialize_with = "deser_u32_or_str"
+    )]
+    pub batch_size: u32,
+    /// How long a claim is held before another node may retry the image.
+    ///
+    /// This is a **lease, not a flag**. A boolean "in progress" marker strands a row
+    /// forever when the node holding it dies mid-transcode — routine on a spot fleet
+    /// — whereas an expiring lease makes the work retryable with no operator
+    /// involvement. It must comfortably exceed the slowest plausible transcode, or
+    /// two nodes will duplicate work instead of skipping it.
+    #[serde(
+        rename = "leaseSeconds",
+        default = "default_sweep_lease",
+        deserialize_with = "deser_u32_or_str"
+    )]
+    pub lease_seconds: u32,
+}
+
+impl Default for TranscodeSweepConfig {
+    fn default() -> Self {
+        Self {
+            enabled: None,
+            interval_seconds: default_sweep_interval(),
+            batch_size: default_sweep_batch(),
+            lease_seconds: default_sweep_lease(),
+        }
+    }
+}
+
+impl TranscodeSweepConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.unwrap_or(false)
+    }
+}
+
 fn default_processing() -> String { "deferred".to_string() }
 fn default_memory_limit() -> u32 { 32 }
 fn default_map_limit() -> u32 { 32 }
+fn default_sweep_interval() -> u32 { 60 }
+fn default_sweep_batch() -> u32 { 2 }
+fn default_sweep_lease() -> u32 { 300 }
 
 impl ResizeConfig {
     pub fn size_keys_for_category(&self, category: &str) -> Vec<String> {
