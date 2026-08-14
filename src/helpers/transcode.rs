@@ -144,6 +144,35 @@ mod tests {
             .collect()
     }
 
+    /// The bug this exists to prevent, measured in production: an uploader that
+    /// does not set the multipart part's content type gets `application/octet-stream`
+    /// from its HTTP client, that lands in S3, and the deferred-variant pass then
+    /// re-downloads the source and is told `application/octet-stream`. Judging on
+    /// mime alone re-encoded a 3.3 MB JPEG into a 13.8 MB PNG.
+    #[test]
+    fn a_generic_mime_falls_back_to_the_extension() {
+        assert!(!servable_as_original("application/octet-stream"));
+        assert_eq!(servable_mime_for_extension(".jpg"), Some("image/jpeg"));
+        assert_eq!(servable_mime_for_extension("jpeg"), Some("image/jpeg"));
+        assert_eq!(servable_mime_for_extension(".PNG"), Some("image/png"));
+    }
+
+    /// A format a browser cannot render must still reach the configured target, or
+    /// the "original" would be an unservable blob under a servable extension.
+    #[test]
+    fn an_unservable_extension_gets_no_shortcut() {
+        for ext in [".heic", ".tif", ".tiff", ".bmp", ".bin", ""] {
+            assert_eq!(servable_mime_for_extension(ext), None, "{ext} must not shortcut");
+        }
+    }
+
+    /// A declared, servable type always wins over the extension.
+    #[test]
+    fn a_declared_type_is_preferred() {
+        assert!(servable_as_original("image/webp"));
+        assert!(servable_as_original("image/png"));
+    }
+
     #[test]
     fn absent_param_follows_configured_mode() {
         assert!(produced(&ResizeSelection::parse(None, None, false)).is_empty());
@@ -334,6 +363,31 @@ fn servable_as_original(mime: &str) -> bool {
     )
 }
 
+/// The servable mime an extension implies, for when the declared type is useless.
+///
+/// **This is not belt-and-braces, it is the common path.** An uploader that does not
+/// set a part's content type gets `application/octet-stream` from its HTTP client,
+/// and that is what lands in S3 — so when [`full_transcode`] later re-downloads the
+/// source to finish a deferred variant, the response says `application/octet-stream`
+/// and the format is lost. Judging by mime alone then sends an ordinary JPEG down the
+/// re-encode path: measured on a real 3.3 MB upload, a 13.8 MB PNG, four times the
+/// bytes and ~18x the CPU, for a file we already held byte-for-byte.
+///
+/// The extension survives that round trip — `downloaded_s3_path` ends in `.jpg` — so
+/// it is the more reliable witness of the two. Deliberately narrow: only extensions
+/// whose format is unambiguous, and only consulted when the declared mime is not
+/// already servable, so a caller that *does* declare its type always wins.
+fn servable_mime_for_extension(ext: &str) -> Option<&'static str> {
+    match ext.trim_start_matches('.').to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "png" => Some("image/png"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        "avif" => Some("image/avif"),
+        _ => None,
+    }
+}
+
 /// Produce the variants `selection` asks for: the original derivative and/or any of
 /// the size variants configured for the category. Variants left out are untouched —
 /// whatever an earlier pass stored for them survives into the updated record.
@@ -356,14 +410,19 @@ async fn transcode_image(
     // servable; `resize.original` (PNG by default) is the fallback for formats a
     // browser cannot render — HEIC, TIFF, BMP — where a lossless, alpha-capable
     // target is exactly what you want.
-    let copy_source_as_original =
-        servable_as_original(local_file_content_type) && !source_extension.is_empty();
+    //
+    // The declared type is preferred, with the extension as the fallback witness
+    // when it is missing or generic — see `servable_mime_for_extension` for why
+    // that is the ordinary case rather than a corner one.
+    let source_mime = if servable_as_original(local_file_content_type) {
+        Some(local_file_content_type)
+    } else {
+        servable_mime_for_extension(source_extension)
+    };
+    let copy_source_as_original = source_mime.is_some() && !source_extension.is_empty();
 
-    let (orig_ext, orig_mime) = if copy_source_as_original {
-        (
-            source_extension.to_string(),
-            local_file_content_type.to_string(),
-        )
+    let (orig_ext, orig_mime) = if let Some(mime) = source_mime.filter(|_| copy_source_as_original) {
+        (source_extension.to_string(), mime.to_string())
     } else {
         (
             cfg.resize
