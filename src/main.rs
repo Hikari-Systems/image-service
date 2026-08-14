@@ -33,18 +33,42 @@ async fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-/// `argv[1] == "transcode-sweep"` → `Some(batch override)`, where `argv[2]` is an
-/// optional image count. Returns `None` for a normal server start.
+/// `argv[1] == "transcode-sweep"` → `Some((batch, max_load))`, from the optional
+/// positional `argv[2]` (image count) and `argv[3]` (load-average ceiling).
+/// Returns `None` for a normal server start.
+///
+/// `max_load` is a **command-line** argument rather than config on purpose: it is a
+/// property of *when this particular invocation runs*, not of the service. The cron
+/// entry that fires every minute wants a ceiling; an operator draining a backlog by
+/// hand does not, and should not have to edit config to say so. Absent means no
+/// check at all, which keeps the plain `transcode-sweep` behaviour untouched.
 ///
 /// Parsed rather than handed to a CLI crate because this is the second subcommand
 /// in the binary and the first (`healthcheck`) is argv-matched too — a dependency
 /// would be more machinery than the feature.
-fn transcode_sweep_subcommand() -> Option<Option<u32>> {
+fn transcode_sweep_subcommand() -> Option<(Option<u32>, Option<f64>)> {
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() != Some("transcode-sweep") {
         return None;
     }
-    Some(args.next().and_then(|n| n.parse().ok()))
+    // A value that is present but unparseable is a typo in a cron line, and
+    // silently treating it as "no ceiling" would disable the throttle exactly
+    // where it was asked for. Say so; still run, because refusing to sweep over a
+    // malformed argument is the worse failure.
+    let batch = parse_arg_or_warn(args.next(), "batch size");
+    let max_load = parse_arg_or_warn(args.next(), "load-average ceiling");
+    Some((batch, max_load))
+}
+
+fn parse_arg_or_warn<T: std::str::FromStr>(raw: Option<String>, what: &str) -> Option<T> {
+    let raw = raw?;
+    match raw.parse() {
+        Ok(v) => Some(v),
+        Err(_) => {
+            tracing::warn!("transcode-sweep: ignoring unparseable {what} {raw:?}");
+            None
+        }
+    }
 }
 
 async fn run() -> Result<()> {
@@ -97,8 +121,8 @@ async fn run() -> Result<()> {
     //
     // It takes the same lease as the loop does, so running it by hand while the
     // loop is also on is safe — the two cannot pick the same image.
-    if let Some(n) = transcode_sweep_subcommand() {
-        return services::sweeper::run_once(&app_state, n).await;
+    if let Some((n, max_load)) = transcode_sweep_subcommand() {
+        return services::sweeper::run_once(&app_state, n, max_load).await;
     }
 
     // The background pass that completes deferred variants. Gated here rather

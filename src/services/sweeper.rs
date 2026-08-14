@@ -80,7 +80,34 @@ pub fn spawn(state: Arc<AppState>) {
 ///
 /// It is still gated on the backend, because without an exclusive claim a second
 /// caller would duplicate the work rather than skip it.
-pub async fn run_once(state: &AppState, batch: Option<u32>) -> anyhow::Result<()> {
+pub async fn run_once(
+    state: &AppState,
+    batch: Option<u32>,
+    max_load: Option<f64>,
+) -> anyhow::Result<()> {
+    // Yield to the machine before claiming anything. Transcoding is pure CPU and
+    // competes directly with the uploads it exists to keep work away from, so on a
+    // busy box the right amount of background work is none: skipping costs a minute
+    // of latency on a variant nobody is waiting for, while pushing through costs
+    // the seller sitting in front of a photo upload right now.
+    //
+    // Checked BEFORE the claim so a skipped tick takes no lease and leaves the rows
+    // free for a quieter node — with two replicas that is a real effect, not a
+    // formality.
+    if let Some(limit) = max_load {
+        match current_load_average() {
+            Some(load) if load > limit => {
+                info!("transcode sweep: skipping, load {load:.2} is over the {limit:.2} ceiling");
+                return Ok(());
+            }
+            Some(load) => debug!("transcode sweep: load {load:.2} within the {limit:.2} ceiling"),
+            // Unreadable /proc/loadavg means we cannot tell, and refusing to work
+            // on a machine that might be idle is worse than the throttle not
+            // applying. Warn and continue.
+            None => warn!("transcode sweep: could not read /proc/loadavg; ignoring the load ceiling"),
+        }
+    }
+
     if state.config.image_metadata.storage.trim() != "db" {
         anyhow::bail!(
             "transcode sweep needs imageMetadata.storage = \"db\": only the Postgres \
@@ -101,6 +128,24 @@ pub async fn run_once(state: &AppState, batch: Option<u32>) -> anyhow::Result<()
         debug!("transcode sweep: one-shot pass complete, nothing pending");
     }
     Ok(())
+}
+
+/// The 1-minute load average, or `None` if it cannot be read.
+///
+/// `/proc` is not namespaced by the container runtime, so this is the **host's**
+/// load — which is the number that matters: the ceiling exists to protect the box
+/// the transcode shares with every other container, not this process's own view.
+///
+/// The 1-minute figure rather than 5 or 15, because the thing being avoided is a
+/// burst of uploads happening *now*; a longer window would keep throttling for
+/// minutes after the burst passed, and would react too late when one began.
+fn current_load_average() -> Option<f64> {
+    std::fs::read_to_string("/proc/loadavg")
+        .ok()?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
 }
 
 /// One pass at the configured batch size.
