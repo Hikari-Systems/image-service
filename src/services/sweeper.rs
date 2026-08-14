@@ -90,9 +90,16 @@ pub async fn run_once(state: &AppState, batch: Option<u32>) -> anyhow::Result<()
         );
     }
     let n = batch.unwrap_or(state.config.resize.transcode_sweep.batch_size);
-    info!("transcode sweep: one-shot pass, up to {n} image(s)");
+    debug!("transcode sweep: one-shot pass, up to {n} image(s)");
     let done = pass_with(state, n).await?;
-    info!("transcode sweep: one-shot pass complete, {done} image(s) processed");
+    // Silent on an idle pass, and deliberately so: this runs from cron as often
+    // as once a minute, and a job that says "nothing to do" 1,440 times a day
+    // buries the times it did something. An empty log is the healthy steady state.
+    if done > 0 {
+        info!("transcode sweep: one-shot pass complete, {done} image(s) processed");
+    } else {
+        debug!("transcode sweep: one-shot pass complete, nothing pending");
+    }
     Ok(())
 }
 
