@@ -218,8 +218,19 @@ impl ResizeConfig {
         let keys_str = if category.is_empty() {
             self.size_keys.clone()
         } else {
+            // Case-insensitive: callers pass the category lowercased (uploads store it
+            // lowercased), but scaling-set keys come from config verbatim, and `__` env
+            // overrides such as `resize__scalingSets__userIcon` keep their camelCase. An
+            // exact `get` silently missed every camelCase set and fell back to `sizeKeys`,
+            // which also dropped any `forceImmediateResize` key outside that default set.
             self.scaling_sets
                 .get(category)
+                .or_else(|| {
+                    self.scaling_sets
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case(category))
+                        .map(|(_, v)| v)
+                })
                 .cloned()
                 .unwrap_or_else(|| self.size_keys.clone())
         };
@@ -301,5 +312,34 @@ impl AppConfig {
         prepare_config(&mut root);
         apply_env_overrides(&mut root);
         serde_json::from_value(root).context("Failed to deserialise config")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resize_with_sets(sets: &[(&str, &str)]) -> ResizeConfig {
+        ResizeConfig {
+            size_keys: "small,medium,large".to_string(),
+            scaling_sets: sets.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn scaling_set_lookup_ignores_case() {
+        // Env overrides keep camelCase keys; uploads look categories up lowercased.
+        let r = resize_with_sets(&[("blenderFrame", "frame480,frame960"), ("auctionphoto", "a,b")]);
+        assert_eq!(r.size_keys_for_category("blenderframe"), ["frame480", "frame960"]);
+        assert_eq!(r.size_keys_for_category("blenderFrame"), ["frame480", "frame960"]);
+        assert_eq!(r.size_keys_for_category("auctionphoto"), ["a", "b"]);
+    }
+
+    #[test]
+    fn unknown_or_empty_category_falls_back_to_size_keys() {
+        let r = resize_with_sets(&[("userIcon", "smallSquare,largeSquare")]);
+        assert_eq!(r.size_keys_for_category("nosuch"), ["small", "medium", "large"]);
+        assert_eq!(r.size_keys_for_category(""), ["small", "medium", "large"]);
     }
 }
