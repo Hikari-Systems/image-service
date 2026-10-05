@@ -33,6 +33,44 @@ async fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+/// `argv[1] == "transcode-sweep"` → `Some((batch, max_load))`, from the optional
+/// positional `argv[2]` (image count) and `argv[3]` (load-average ceiling).
+/// Returns `None` for a normal server start.
+///
+/// `max_load` is a **command-line** argument rather than config on purpose: it is a
+/// property of *when this particular invocation runs*, not of the service. The cron
+/// entry that fires every minute wants a ceiling; an operator draining a backlog by
+/// hand does not, and should not have to edit config to say so. Absent means no
+/// check at all, which keeps the plain `transcode-sweep` behaviour untouched.
+///
+/// Parsed rather than handed to a CLI crate because this is the second subcommand
+/// in the binary and the first (`healthcheck`) is argv-matched too — a dependency
+/// would be more machinery than the feature.
+fn transcode_sweep_subcommand() -> Option<(Option<u32>, Option<f64>)> {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() != Some("transcode-sweep") {
+        return None;
+    }
+    // A value that is present but unparseable is a typo in a cron line, and
+    // silently treating it as "no ceiling" would disable the throttle exactly
+    // where it was asked for. Say so; still run, because refusing to sweep over a
+    // malformed argument is the worse failure.
+    let batch = parse_arg_or_warn(args.next(), "batch size");
+    let max_load = parse_arg_or_warn(args.next(), "load-average ceiling");
+    Some((batch, max_load))
+}
+
+fn parse_arg_or_warn<T: std::str::FromStr>(raw: Option<String>, what: &str) -> Option<T> {
+    let raw = raw?;
+    match raw.parse() {
+        Ok(v) => Some(v),
+        Err(_) => {
+            tracing::warn!("transcode-sweep: ignoring unparseable {what} {raw:?}");
+            None
+        }
+    }
+}
+
 async fn run() -> Result<()> {
     let cfg = AppConfig::load().context("Failed to load application config")?;
 
@@ -67,11 +105,51 @@ async fn run() -> Result<()> {
         config: cfg.clone(),
     });
 
+    // `server transcode-sweep [n]` — run one pass and exit, instead of serving.
+    //
+    // The same shape as the `healthcheck` subcommand, and for the same reason:
+    // it needs the service's own config, credentials and ImageMagick, so a
+    // shell script cannot stand in for it. Two things it buys that the in-process
+    // loop does not:
+    //
+    //   * an **external** scheduler can drive the sweep (a systemd timer, a cron
+    //     entry, a one-shot container) with `transcodeSweep.enabled` left false —
+    //     useful when you want the backlog cleared on a schedule you control
+    //     rather than on every replica independently;
+    //   * a **manual** trigger, to drain a backlog or check the claim behaves,
+    //     without waiting out an interval or restarting anything.
+    //
+    // It takes the same lease as the loop does, so running it by hand while the
+    // loop is also on is safe — the two cannot pick the same image.
+    if let Some((n, max_load)) = transcode_sweep_subcommand() {
+        return services::sweeper::run_once(&app_state, n, max_load).await;
+    }
+
+    // The background pass that completes deferred variants. Gated here rather
+    // than inside the loop so the "it will do nothing" case is one line at
+    // startup instead of silence: only the Postgres backend can claim an image
+    // exclusively, and on the file backend every replica would transcode every
+    // image — worse than not sweeping at all.
+    if cfg.resize.transcode_sweep.is_enabled() {
+        if cfg.image_metadata.storage.trim() == "db" {
+            services::sweeper::spawn(app_state.clone().into_inner());
+        } else {
+            tracing::warn!(
+                "transcode sweep is enabled but imageMetadata.storage is {:?}; \
+                 only the db backend can claim an image exclusively, so the sweep \
+                 is disabled — set storage to \"db\" to use it",
+                cfg.image_metadata.storage
+            );
+        }
+    }
+
     let port = cfg.server.port;
 
     hs_utils::server::run(port, move || {
         App::new()
-            .wrap(middleware::Logger::default())
+            // /healthcheck is polled constantly by the load balancer — keep it
+            // out of the request log.
+            .wrap(middleware::Logger::default().exclude("/healthcheck"))
             .app_data(app_state.clone())
             .route(
                 "/healthcheck",

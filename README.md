@@ -34,7 +34,18 @@ Upload a new image. Accepts a `multipart/form-data` body with a field named `ima
 **Query params**
 | Param | Type | Description |
 |---|---|---|
-| `forceImmediateResize` | bool | If `true`, transcode synchronously before responding. Otherwise follows `resize.processing` config. |
+| `forceImmediateResize` | bool or list | If truthy (`true`, `yes`, `y`, `on`, `1`, `all` — any case), transcode everything synchronously before responding. If a comma-separated list of variant names (e.g. `original,small`), produce only those before responding. Falsey values (`false`, `no`, `n`, `off`, `0`, `none`) and absence follow the `resize.processing` config. |
+| `defer` | list | Comma-separated variant names to *not* produce during the upload, e.g. `defer=large`. Subtracted from whatever `forceImmediateResize` and `resize.processing` selected, and wins over both. |
+
+Variant names are the size keys configured for the category, plus `original` for the
+`-original.*` derivative. An unknown name is a `400`. The raw source upload
+(`downloadedS3Path`) always happens regardless of either parameter.
+
+Whatever is not produced during the upload is left to a later
+`POST /api/image/:id/transcode`, which merges its output into the existing record
+rather than replacing it. So `?forceImmediateResize=original,small` returns as soon as
+the thumbnail a page needs is ready, and the remaining sizes can be filled in
+afterwards with `POST /api/image/:id/transcode?sizes=medium,large`.
 
 **Response `201 Created`**
 ```json
@@ -93,9 +104,21 @@ Same as the redirect endpoint but returns JSON instead of redirecting.
 ---
 
 ### `POST /api/image/:id/transcode`
-Trigger a full transcode for an existing image that has already been uploaded. Downloads the source from CloudFront/S3, runs all configured size variants, updates metadata.
+Trigger a transcode for an existing image that has already been uploaded. Downloads the source from CloudFront/S3, runs the requested size variants, updates metadata. With no query params it runs every configured variant, as before.
+
+**Query params**
+| Param | Type | Description |
+|---|---|---|
+| `sizes` | list | Comma-separated variant names to produce, e.g. `medium,large`. Absent means all of them. |
+| `defer` | list | Comma-separated variant names to skip. Subtracted from `sizes`, and wins over it. |
+
+Names are the size keys configured for the category, plus `original`. An unknown name is a `400`.
 
 **Response `200 OK`** — updated `ImageRecord` (same shape as upload response).
+
+Variants produced here are merged into the existing record: `resizedFiles` entries are
+added or replaced by size key, and `originalS3Path` is left alone unless `original` was
+produced in this pass. That makes it safe to complete an upload piecemeal.
 
 Returns `404` if the image or its source file is not found.
 
@@ -222,7 +245,7 @@ All JSON key names are **camelCase** and match the original TypeScript service e
 | Key | Description |
 |---|---|
 | `imageMetadata.storage` | `"file"` stores JSON on disk at `parentPath`; `"db"` uses PostgreSQL |
-| `resize.processing` | `"deferred"` skips transcoding on upload unless `forceImmediateResize=true`; any other value transcodes immediately |
+| `resize.processing` | `"deferred"` skips transcoding on upload unless `forceImmediateResize` asks for it; any other value transcodes immediately. Either way an explicit variant list on the request wins. |
 | `resize.sizeKeys` | Comma-separated list of size keys used for the `default` category |
 | `resize.scalingSets` | Map of `{ "categoryName": "key1,key2" }` for non-default categories |
 | `cloudfront.privateKey` | Inline PEM private key for CloudFront signing |
@@ -272,6 +295,13 @@ services:
       POSTGRES_DB: image_service
       POSTGRES_USER: image-service
       POSTGRES_PASSWORD: image-service
+
+  minio:          # local S3 stand-in — see "Local S3 with MinIO" below
+    image: minio/minio:latest
+    ports: ["9000:9000", "9001:9001"]
+
+  minio-init:     # creates the bucket, opens it for anonymous GET, exits
+    image: minio/mc:latest
 ```
 
 Place production secrets (S3 credentials, CloudFront key, etc.) in `../../configs/image-service/config.json` — this directory is volume-mounted to `/sandbox` inside the container and deep-merged over the baked-in defaults at startup.
@@ -330,6 +360,38 @@ imageMetadata__storage=db db__host=localhost cargo run
 ```bash
 cargo check
 ```
+
+### Local S3 with MinIO
+
+Real uploads need a bucket, so `docker-compose.yml` includes MinIO as an S3 stand-in
+plus a one-shot `minio-init` that creates the bucket and opens it for anonymous GET.
+With CloudFront signing switched off (no `cloudfront.keypairId`), the URLs the API
+returns point straight at MinIO — which is what lets `POST /api/image/:id/transcode`
+re-download the source locally.
+
+```bash
+docker compose up -d minio minio-init     # MinIO on :9000, console on :9001
+source scripts/local-env.sh               # env for the host process
+cargo run
+```
+
+`scripts/local-env.sh` points the service at MinIO, keeps metadata on disk under
+`.local/metadata`, and picks up `magick` or IM6's `convert`, whichever is installed.
+Objects are then browsable at `http://localhost:9000/image-service-local/<key>`
+(login `minioadmin` / `minioadmin` for the console).
+
+```bash
+./scripts/local-smoke-test.sh             # end-to-end check of variant selection
+```
+
+The smoke test asserts on both the returned record and what actually landed in the
+bucket, including that a deferred variant is genuinely absent and that a follow-up
+transcode merges into the record rather than replacing it. Tear down with
+`docker compose down -v`.
+
+`docker compose up` also runs the service itself against MinIO. In that setup
+`cloudfront.url` uses the in-network `minio` hostname, so swap it for `localhost` in
+any URL the API hands back before fetching it from the host.
 
 ### Test page
 
