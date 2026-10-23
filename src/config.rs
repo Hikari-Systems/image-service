@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use hs_utils::config::{
-    apply_env_overrides, deep_merge, deser_i64_or_str, deser_opt_i32_or_str, deser_u16_or_str,
-    deser_u32_or_str, prepare_config,
+    deser_i64_or_str, deser_opt_bool_or_str, deser_opt_i32_or_str, deser_u16_or_str,
+    deser_u32_or_str, load_layered_value,
 };
 pub use hs_utils::db::DbConfig;
 use serde::Deserialize;
@@ -55,6 +55,26 @@ pub struct S3Config {
     pub secret_access_key: String,
     #[serde(default = "default_region")]
     pub region: String,
+    /// Override the S3 endpoint — set this to point at MinIO or another S3-compatible
+    /// server for local testing. Empty means the real AWS endpoint for the region.
+    #[serde(rename = "endpointUrl", default)]
+    pub endpoint_url: String,
+    /// Path-style addressing (`host/bucket/key` rather than `bucket.host/key`).
+    /// Defaults to on whenever `endpointUrl` is set, since S3-compatible servers are
+    /// rarely reachable under per-bucket subdomains.
+    #[serde(
+        rename = "forcePathStyle",
+        default,
+        deserialize_with = "deser_opt_bool_or_str"
+    )]
+    pub force_path_style: Option<bool>,
+}
+
+impl S3Config {
+    pub fn force_path_style(&self) -> bool {
+        self.force_path_style
+            .unwrap_or(!self.endpoint_url.trim().is_empty())
+    }
 }
 
 fn default_region() -> String { "us-east-1".to_string() }
@@ -113,6 +133,13 @@ pub struct ResizeConfig {
     pub map_limit: u32,
     #[serde(default)]
     pub original: SizeConfig,
+    /// The background pass that finishes what an upload deferred. Like
+    /// [`Self::original`], a **named** field, so serde consumes it before the
+    /// flattened `sizes` map — which makes `transcodeSweep` a reserved word: it
+    /// can never be a size key, and must never appear in `sizeKeys` or a
+    /// `scalingSets` entry.
+    #[serde(rename = "transcodeSweep", default)]
+    pub transcode_sweep: TranscodeSweepConfig,
     /// Named size configs (small, medium, large, etc.) captured via flatten.
     #[serde(flatten)]
     pub sizes: HashMap<String, SizeConfig>,
@@ -120,17 +147,90 @@ pub struct ResizeConfig {
     pub scaling_sets: HashMap<String, String>,
 }
 
+/// The background pass that completes variants an upload deferred.
+///
+/// Without it, `resize.processing: "deferred"` — the shipped default — has no
+/// completion path whatsoever: nothing but an explicit
+/// `POST /api/image/{id}/transcode` ever produces those variants, so they simply
+/// never appear.
+#[derive(Debug, Deserialize, Clone)]
+pub struct TranscodeSweepConfig {
+    /// Off unless asked for: it spends CPU on a schedule.
+    #[serde(default, deserialize_with = "deser_opt_bool_or_str")]
+    pub enabled: Option<bool>,
+    /// Seconds between passes.
+    #[serde(
+        rename = "intervalSeconds",
+        default = "default_sweep_interval",
+        deserialize_with = "deser_u32_or_str"
+    )]
+    pub interval_seconds: u32,
+    /// Images claimed per pass. Deliberately small: transcoding competes with live
+    /// uploads for the same cores, and the point of deferring was to keep that work
+    /// off the request path, not to move a stampede somewhere else.
+    #[serde(
+        rename = "batchSize",
+        default = "default_sweep_batch",
+        deserialize_with = "deser_u32_or_str"
+    )]
+    pub batch_size: u32,
+    /// How long a claim is held before another node may retry the image.
+    ///
+    /// This is a **lease, not a flag**. A boolean "in progress" marker strands a row
+    /// forever when the node holding it dies mid-transcode — routine on a spot fleet
+    /// — whereas an expiring lease makes the work retryable with no operator
+    /// involvement. It must comfortably exceed the slowest plausible transcode, or
+    /// two nodes will duplicate work instead of skipping it.
+    #[serde(
+        rename = "leaseSeconds",
+        default = "default_sweep_lease",
+        deserialize_with = "deser_u32_or_str"
+    )]
+    pub lease_seconds: u32,
+}
+
+impl Default for TranscodeSweepConfig {
+    fn default() -> Self {
+        Self {
+            enabled: None,
+            interval_seconds: default_sweep_interval(),
+            batch_size: default_sweep_batch(),
+            lease_seconds: default_sweep_lease(),
+        }
+    }
+}
+
+impl TranscodeSweepConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.unwrap_or(false)
+    }
+}
+
 fn default_processing() -> String { "deferred".to_string() }
 fn default_memory_limit() -> u32 { 32 }
 fn default_map_limit() -> u32 { 32 }
+fn default_sweep_interval() -> u32 { 60 }
+fn default_sweep_batch() -> u32 { 2 }
+fn default_sweep_lease() -> u32 { 300 }
 
 impl ResizeConfig {
     pub fn size_keys_for_category(&self, category: &str) -> Vec<String> {
         let keys_str = if category.is_empty() {
             self.size_keys.clone()
         } else {
+            // Case-insensitive: callers pass the category lowercased (uploads store it
+            // lowercased), but scaling-set keys come from config verbatim, and `__` env
+            // overrides such as `resize__scalingSets__userIcon` keep their camelCase. An
+            // exact `get` silently missed every camelCase set and fell back to `sizeKeys`,
+            // which also dropped any `forceImmediateResize` key outside that default set.
             self.scaling_sets
                 .get(category)
+                .or_else(|| {
+                    self.scaling_sets
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case(category))
+                        .map(|(_, v)| v)
+                })
                 .cloned()
                 .unwrap_or_else(|| self.size_keys.clone())
         };
@@ -185,32 +285,45 @@ impl Default for ImageMagickConfig {
 }
 
 impl AppConfig {
-    /// Load configuration in priority order (lowest → highest):
+    /// Load configuration via `hs_utils::config::load_layered_value`, in priority
+    /// order (lowest → highest):
     ///
-    /// 1. `config.json` in the working directory
-    /// 2. `/sandbox/config.json` — deep-merged on top; silently ignored if absent
+    /// 1. `/app/config.json` if present, else `config.json` in the working directory
+    /// 2. `${CONFIG_PATH:-/sandbox}/config.json` — deep-merged on top; ignored if absent
     /// 3. Env vars with `__` separator, e.g. `s3__bucketName=my-bucket`
+    /// 4. `[SECRET]:/path` indirections resolved on the final values (so a secret
+    ///    supplied through an env var is resolved too)
     pub fn load() -> Result<Self> {
-        let mut root: Value = match std::fs::read_to_string("config.json") {
-            Ok(s) => serde_json::from_str(&s).context("Failed to parse config.json")?,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Value::Object(Default::default())
-            }
-            Err(e) => return Err(e).context("Failed to read config.json"),
-        };
-
-        match std::fs::read_to_string("/sandbox/config.json") {
-            Ok(s) => {
-                let overlay: Value = serde_json::from_str(&s)
-                    .context("Failed to parse /sandbox/config.json")?;
-                deep_merge(&mut root, overlay);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e).context("Failed to read /sandbox/config.json"),
-        }
-
-        prepare_config(&mut root);
-        apply_env_overrides(&mut root);
+        let root: Value = load_layered_value()?;
         serde_json::from_value(root).context("Failed to deserialise config")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resize_with_sets(sets: &[(&str, &str)]) -> ResizeConfig {
+        ResizeConfig {
+            size_keys: "small,medium,large".to_string(),
+            scaling_sets: sets.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn scaling_set_lookup_ignores_case() {
+        // Env overrides keep camelCase keys; uploads look categories up lowercased.
+        let r = resize_with_sets(&[("blenderFrame", "frame480,frame960"), ("auctionphoto", "a,b")]);
+        assert_eq!(r.size_keys_for_category("blenderframe"), ["frame480", "frame960"]);
+        assert_eq!(r.size_keys_for_category("blenderFrame"), ["frame480", "frame960"]);
+        assert_eq!(r.size_keys_for_category("auctionphoto"), ["a", "b"]);
+    }
+
+    #[test]
+    fn unknown_or_empty_category_falls_back_to_size_keys() {
+        let r = resize_with_sets(&[("userIcon", "smallSquare,largeSquare")]);
+        assert_eq!(r.size_keys_for_category("nosuch"), ["small", "medium", "large"]);
+        assert_eq!(r.size_keys_for_category(""), ["small", "medium", "large"]);
     }
 }

@@ -4,7 +4,13 @@
 <script type="text/javascript">
   function doUpload() {
     $('#response').text('Working ...');
-    var url = '../api/image/' +  $('#category').val() + '?forceImmediateResize=' + $('#forceImmediateResize').is(':checked');
+    // A size list in the text box overrides the checkbox; both accept the same
+    // variant names (the configured size keys, plus "original").
+    var sizes = $('#sizes').val().trim();
+    var defer = $('#defer').val().trim();
+    var url = '../api/image/' +  $('#category').val()
+      + '?forceImmediateResize=' + (sizes || $('#forceImmediateResize').is(':checked'))
+      + (defer ? '&defer=' + encodeURIComponent(defer) : '');
     var fileToUpload = new FormData();
     fileToUpload.append('image', $('#file')[0].files[0]);
 
@@ -28,6 +34,8 @@
     <input type="file" name="image" value="" id="file"/>
     Category: <input type="text" name="category" value="default" id="category"/>
     <input type="checkbox" name="forceImmediateResize" value="true" id="forceImmediateResize"/>
+    Sizes now: <input type="text" name="sizes" value="" id="sizes" placeholder="e.g. original,small"/>
+    Defer: <input type="text" name="defer" value="" id="defer" placeholder="e.g. large"/>
     <button onclick="doUpload()">Upload</button>
   </form>
   <hr/>

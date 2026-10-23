@@ -7,6 +7,7 @@ use tracing::{debug, error};
 
 use crate::helpers::transcode::{
     extension_from_path, full_transcode, get_image_descriptor_with_download_url, process_image,
+    ResizeSelection, ORIGINAL_KEY,
 };
 use crate::models::image::ScaledImage;
 use crate::state::AppState;
@@ -135,13 +136,50 @@ async fn resolve_image_url(
     Err(anyhow::anyhow!("No usable image data for image {}", id))
 }
 
-/// POST /api/image/:id/transcode — trigger a full transcode for an existing image.
+/// Resolve the variant-selection query parameters, rejecting any key the config does
+/// not define. Validating up front means a typo is a 400 rather than a 500 raised
+/// halfway through, after the source has already been uploaded to S3.
+fn selection_from_query(
+    force: Option<&String>,
+    defer: Option<&String>,
+    default_immediate: bool,
+    state: &AppState,
+) -> Result<ResizeSelection, String> {
+    let selection = ResizeSelection::parse(
+        force.map(String::as_str),
+        defer.map(String::as_str),
+        default_immediate,
+    );
+
+    for key in selection.requested_keys() {
+        if key != ORIGINAL_KEY && state.config.resize.get_size(key).is_none() {
+            return Err(format!("Unknown size key: {}", key));
+        }
+    }
+
+    Ok(selection)
+}
+
+/// POST /api/image/:id/transcode — transcode an existing image. Accepts `?sizes=` and
+/// `?defer=` to produce a subset; with neither, every variant is produced as before.
 async fn transcode_handler(
     path: web::Path<String>,
+    query: web::Query<std::collections::HashMap<String, String>>,
     state: web::Data<AppState>,
 ) -> HttpResponse {
     let id = path.into_inner();
-    debug!("Transcode requested for id={}", id);
+
+    // This endpoint has always transcoded regardless of `resize.processing`, so an
+    // absent `sizes` means everything.
+    let selection = match selection_from_query(query.get("sizes"), query.get("defer"), true, &state)
+    {
+        Ok(s) => s,
+        Err(msg) => {
+            error!("Transcode rejected for id={}: {}", id, msg);
+            return HttpResponse::BadRequest().body(msg);
+        }
+    };
+    debug!("Transcode requested for id={} selection={:?}", id, selection);
 
     match state.backend.get(&id).await {
         Err(e) => {
@@ -153,7 +191,7 @@ async fn transcode_handler(
             if img.downloaded_s3_path.is_none() {
                 return HttpResponse::NotFound().finish();
             }
-            match full_transcode(img, &state).await {
+            match full_transcode(img, &selection, &state).await {
                 Ok(result) => HttpResponse::Ok().json(result),
                 Err(e) => {
                     error!("Error transcoding image id={}: {}", id, e);
@@ -172,10 +210,20 @@ async fn upload_image(
     state: web::Data<AppState>,
 ) -> HttpResponse {
     let category = path.into_inner();
-    let force_resize = query
-        .get("forceImmediateResize")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+
+    let default_immediate = state.config.resize.processing.trim() != "deferred";
+    let selection = match selection_from_query(
+        query.get("forceImmediateResize"),
+        query.get("defer"),
+        default_immediate,
+        &state,
+    ) {
+        Ok(s) => s,
+        Err(msg) => {
+            error!("Upload rejected for category={}: {}", category, msg);
+            return HttpResponse::BadRequest().body(msg);
+        }
+    };
 
     // Read the first multipart field named "image"
     let mut found_file: Option<(tempfile::NamedTempFile, String, String)> = None;
@@ -249,8 +297,8 @@ async fn upload_image(
     let tmp_path = tmp_file.path().to_path_buf();
 
     debug!(
-        "Image uploaded: path={:?} mime={} forceImmediateResize={}",
-        tmp_path, content_type, force_resize
+        "Image uploaded: path={:?} mime={} selection={:?}",
+        tmp_path, content_type, selection
     );
 
     match process_image(
@@ -259,7 +307,7 @@ async fn upload_image(
         &content_type,
         &category,
         None,
-        force_resize,
+        &selection,
         None,
         &state,
     )
