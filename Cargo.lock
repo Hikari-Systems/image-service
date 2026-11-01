@@ -1747,8 +1747,8 @@ dependencies = [
 
 [[package]]
 name = "hs-utils"
-version = "0.35.0"
-source = "git+https://github.com/Hikari-Systems/hs-utils-rs?tag=v0.35.0#61b480c9aabdfb933a16265829b8a68086a90f93"
+version = "0.36.1"
+source = "git+https://github.com/Hikari-Systems/hs-utils-rs?tag=v0.36.1#0749b637de6d4e06a2b34194a59829465312dcd8"
 dependencies = [
  "actix-http",
  "actix-service",
