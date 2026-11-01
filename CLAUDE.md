@@ -71,6 +71,8 @@ Temp files for ImageMagick output use `tempfile::Builder::keep()` so the file pe
 ### CloudFront signing (`services/cloudfront.rs`)
 Uses `rsa` crate with `rsa::pkcs1v15::SigningKey<sha1::Sha1>`. PKCS1v15 with SHA-1 is required by CloudFront — RSA-PSS or SHA-256 will not work. The private key is loaded from either `cloudfront.privateKey` (inline PEM) or `cloudfront.privateKeyFile` (path to PEM file).
 
+`cf_base64()` applies CloudFront's modified base64 alphabet (per AWS docs): `+` → `-`, `/` → `~`, `=` → `_`. Note: this is NOT standard URL-safe base64 (`/`→`_`, `=`→`~`) — the `/` and `=` mappings are the opposite of what you'd expect.
+
 ### sqlx queries (`models/image_db.rs`)
 Use **runtime queries** (`query_as::<_, Row>(sql).bind(value)`) not compile-time macros (`query_as!`). The macro requires `DATABASE_URL` at compile time, which breaks Docker builds without a live database.
 
@@ -129,4 +131,8 @@ Upload to `POST /api/image/avatar` to use that size set.
 - The `/sandbox/config.json` file is the intended mechanism for injecting secrets in production. Never put real credentials in the baked-in `config.json`.
 - ImageMagick `memoryLimit` and `mapLimit` are in MiB. Keep them at 256+ to avoid resource contention when processing larger images.
 - The `processing` field defaults to `"deferred"` — uploads return immediately without transcoding. Pass `?forceImmediateResize=true` or set `resize.processing` to any non-`"deferred"` value to transcode synchronously.
+- `forceImmediateResize` also takes a comma-separated variant list (`?forceImmediateResize=original,small`) meaning "produce exactly these before responding", and `?defer=large` is the denylist form, subtracted from whatever the list and `resize.processing` selected. `defer` wins when a key appears in both. Both are parsed by `ResizeSelection` in `helpers/transcode.rs`; unknown keys are rejected with a `400` in the route handler, before anything is uploaded.
+- Because an unrecognised value is now a size key rather than a silent "false", `forceImmediateResize` accepts the usual boolean spellings (`yes`/`y`/`on`/`1`/`all`, `no`/`n`/`off`/`0`/`none`). Previously only the literal `true` counted, so `?forceImmediateResize=yes` quietly meant *deferred*; it now means yes. Keep `is_truthy`/`is_falsey` in sync if the API grows another boolean-ish parameter.
+- **`original` is a reserved variant name, not a size key.** It is a named field on `ResizeConfig`, consumed by serde before the `#[serde(flatten)] sizes` map, so `get_size("original")` is always `None`. It must never reach `scale_one`, which would abort the whole transcode. Never add it to `sizeKeys` or a `scalingSets` entry.
+- **Partial transcodes merge, they do not replace.** `transcode_image` folds newly produced variants into `to_overwrite.resized_files` by size key and leaves `original_s3_path` untouched unless the original was produced in that pass. Any new write path must preserve this or a follow-up `POST /api/image/{id}/transcode?sizes=…` will erase the earlier pass's work.
 - Database migrations run automatically when `imageMetadata.storage = "db"`. The migration table (`_sqlx_migrations`) is idempotent — running against an already-migrated database is safe.

@@ -24,12 +24,21 @@ impl S3Service {
             None,
             "config",
         );
-        let sdk_config = aws_sdk_s3::Config::builder()
+        let mut builder = aws_sdk_s3::Config::builder()
             .credentials_provider(credentials)
             .region(Region::new(cfg.region.clone()))
-            .behavior_version_latest()
-            .build();
-        let client = Client::from_conf(sdk_config);
+            .force_path_style(cfg.force_path_style())
+            .behavior_version_latest();
+
+        // Point at MinIO (or any S3-compatible server) when configured; otherwise the
+        // SDK resolves the real AWS endpoint for the region.
+        let endpoint = cfg.endpoint_url.trim();
+        if !endpoint.is_empty() {
+            info!("S3 endpoint override: {}", endpoint);
+            builder = builder.endpoint_url(endpoint);
+        }
+
+        let client = Client::from_conf(builder.build());
         Self {
             client,
             bucket: cfg.bucket_name.clone(),
