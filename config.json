@@ -5,6 +5,11 @@
   "log": {
     "level": "debug"
   },
+  "otel": {
+    "enabled": "false",
+    "serviceName": "image-service",
+    "level": "info"
+  },
   "imageMetadata": {
     "parentPath": "/metadata",
     "storage": "file"
@@ -40,7 +45,8 @@
     },
     "minpool": 0,
     "maxpool": 10,
-    "debug": false
+    "debug": false,
+    "slowqueryms": 250
   },
   "resize": {
     "processing": "deferred",

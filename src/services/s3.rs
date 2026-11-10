@@ -9,6 +9,7 @@ use tokio::time::timeout;
 use tracing::{debug, info};
 
 use crate::config::S3Config;
+use crate::traced::Traced as _;
 
 pub struct S3Service {
     client: Client,
@@ -62,7 +63,8 @@ impl S3Service {
                 .key(to)
                 .body(body)
                 .content_type(mime_type)
-                .send(),
+                .send()
+                .traced(crate::traced::s3("PutObject", &self.bucket)),
         )
         .await
         .with_context(|| format!("S3 PutObject timed out after 120s for key={}", to))?

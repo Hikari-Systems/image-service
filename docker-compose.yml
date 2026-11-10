@@ -7,6 +7,8 @@ services:
       # Env vars use __ as path separator with exact camelCase key names
       # matching the config.json structure, e.g. imageMetadata__parentPath.
       log__level: info
+      # Traces and metrics stay off locally; point otel__endpoint at a Collector to try them.
+      otel__enabled: "false"
       imageMetadata__storage: db
       # imageMetadata__parentPath: /metadata
       db__host: postgres

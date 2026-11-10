@@ -74,6 +74,9 @@ impl ImageBackend for DbBackend {
     ///   and the sweep goes quiet, rather than re-leasing the same rows forever.
     /// * **`downloaded_s3_path IS NOT NULL`** because the transcode re-downloads
     ///   the source from it; a row without one has nothing to work from.
+    // `debug`: the sweep polls this every interval on every replica, mostly to
+    // find nothing; at `info` an idle fleet would export a span a minute each.
+    #[tracing::instrument(skip_all, level = "debug", name = "db.image.claim_for_transcode", fields(db.system.name = "postgresql"))]
     async fn claim_for_transcode(
         &self,
         limit: i64,
@@ -119,6 +122,7 @@ impl ImageBackend for DbBackend {
         rows.into_iter().map(row_to_record).collect()
     }
 
+    #[tracing::instrument(skip_all, name = "db.image.set_resize_lease", fields(db.system.name = "postgresql"))]
     async fn set_resize_lease(&self, id: Uuid, until: Option<DateTime<Utc>>) -> Result<()> {
         sqlx::query("UPDATE image SET avoid_resize_until = $2 WHERE id = $1")
             .bind(id)
@@ -129,6 +133,7 @@ impl ImageBackend for DbBackend {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, name = "db.image.get", fields(db.system.name = "postgresql"))]
     async fn get(&self, id: &str) -> Result<Option<ImageRecord>> {
         let uuid: Uuid = id.parse().context("Invalid UUID format")?;
 
@@ -151,6 +156,7 @@ impl ImageBackend for DbBackend {
         }
     }
 
+    #[tracing::instrument(skip_all, name = "db.image.upsert", fields(db.system.name = "postgresql"))]
     async fn upsert(&self, image: ImageRecord) -> Result<ImageRecord> {
         let id = image.id.unwrap_or_else(Uuid::new_v4);
         let resized_files_json: Option<Value> = match &image.resized_files {

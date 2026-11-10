@@ -4,6 +4,7 @@ mod models;
 mod routes;
 mod services;
 mod state;
+mod traced;
 
 use actix_web::{middleware, web, App, HttpResponse};
 use anyhow::{Context, Result};
@@ -74,7 +75,9 @@ fn parse_arg_or_warn<T: std::str::FromStr>(raw: Option<String>, what: &str) -> O
 async fn run() -> Result<()> {
     let cfg = AppConfig::load().context("Failed to load application config")?;
 
-    hs_utils::logging::init(&cfg.log.level);
+    // Held for all of `run`: dropping it flushes the exporters, which
+    // `flush_otel` does under a deadline once the server (or a sweep) is done.
+    let otel = hs_utils::otel::init(&cfg.log.level, &cfg.otel)?;
 
     info!("image-service starting on port {}", cfg.server.port);
 
@@ -122,7 +125,9 @@ async fn run() -> Result<()> {
     // It takes the same lease as the loop does, so running it by hand while the
     // loop is also on is safe — the two cannot pick the same image.
     if let Some((n, max_load)) = transcode_sweep_subcommand() {
-        return services::sweeper::run_once(&app_state, n, max_load).await;
+        let result = services::sweeper::run_once(&app_state, n, max_load).await;
+        flush_otel(otel).await;
+        return result;
     }
 
     // The background pass that completes deferred variants. Gated here rather
@@ -145,8 +150,11 @@ async fn run() -> Result<()> {
 
     let port = cfg.server.port;
 
-    hs_utils::server::run(port, move || {
+    let result = hs_utils::server::run(port, move || {
         App::new()
+            // Outermost: a server span per request, named by route template,
+            // continuing the caller's traceparent.
+            .wrap(hs_utils::otel::actix_trace())
             // /healthcheck is polled constantly by the load balancer — keep it
             // out of the request log.
             .wrap(middleware::Logger::default().exclude("/healthcheck"))
@@ -159,7 +167,37 @@ async fn run() -> Result<()> {
             .route("/test", web::get().to(test_page))
             .route("/test/", web::get().to(test_page))
     })
-    .await
+    .await;
+
+    flush_otel(otel).await;
+    result
+}
+
+/// How long shutdown waits for the exporters to flush before giving up on
+/// whatever spans are still buffered (an unreachable Collector would otherwise
+/// hold the process past its stop timeout).
+const OTEL_FLUSH_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Drop the otel guard (which flushes traces and metrics) under a deadline.
+async fn flush_otel(otel: hs_utils::otel::OtelGuard) {
+    let started = std::time::Instant::now();
+    let flushed = tokio::time::timeout(
+        OTEL_FLUSH_DEADLINE,
+        tokio::task::spawn_blocking(move || drop(otel)),
+    )
+    .await;
+    // `warn!` on the timeout arm: spans were dropped, a degraded shutdown.
+    if flushed.is_err() {
+        tracing::warn!(
+            shutdown.otel_flush_ms = started.elapsed().as_millis(),
+            "the otel flush hit its deadline and spans were dropped"
+        );
+    } else {
+        tracing::info!(
+            shutdown.otel_flush_ms = started.elapsed().as_millis(),
+            "otel flushed"
+        );
+    }
 }
 
 async fn test_page() -> HttpResponse {
