@@ -141,9 +141,9 @@ Upload to `POST /api/image/avatar` to use that size set.
 
 ## Instrumented calls (hs-utils otel)
 
-Traces and metrics come from hs-utils' `otel` module, v0.37.1 and later. This repo is on v0.36.1, so until it
-bumps, read this section as the target. All of it is inert until `otel.enabled` is set, so it can land before
-a Collector or Honeycomb key exists. The full reference is hs-utils' `CLAUDE.md` (v0.37.0).
+Traces and metrics come from hs-utils' `otel` module, v0.37.1 and later. This repo is on v0.37.2. All of it is
+inert until `otel.enabled` is set, so it can land before a Collector or Honeycomb key exists. The full reference
+is hs-utils' `CLAUDE.md` (v0.37.2).
 
 **Startup.**
 - `let _otel = hs_utils::otel::init(&log_level, &cfg.otel)?;` replaces `logging::init`, with the same level
