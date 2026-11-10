@@ -32,9 +32,9 @@ struct ImageRow {
 
 fn row_to_record(row: ImageRow) -> Result<ImageRecord> {
     let resized_files: Option<Vec<ScaledImage>> = match row.resized_files {
-        Some(v) => Some(
-            serde_json::from_value(v).context("Failed to deserialise resized_files from db")?,
-        ),
+        Some(v) => {
+            Some(serde_json::from_value(v).context("Failed to deserialise resized_files from db")?)
+        }
         None => None,
     };
     Ok(ImageRecord {

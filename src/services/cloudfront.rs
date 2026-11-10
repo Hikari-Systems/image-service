@@ -31,9 +31,13 @@ impl CloudfrontService {
                 debug!("CloudFront: loading private key from config text");
                 rebuild_pem(&key_text)
             } else if !cfg.private_key_file.is_empty() {
-                debug!("CloudFront: loading private key from file {}", cfg.private_key_file);
-                fs::read_to_string(&cfg.private_key_file)
-                    .with_context(|| format!("Failed to read CF key file: {}", cfg.private_key_file))?
+                debug!(
+                    "CloudFront: loading private key from file {}",
+                    cfg.private_key_file
+                );
+                fs::read_to_string(&cfg.private_key_file).with_context(|| {
+                    format!("Failed to read CF key file: {}", cfg.private_key_file)
+                })?
             } else {
                 bail!("CloudFront keypairId is set but no privateKey or privateKeyFile provided");
             };
@@ -77,10 +81,7 @@ impl CloudfrontService {
 
         let signed = format!(
             "{}?Expires={}&Signature={}&Key-Pair-Id={}",
-            full_url,
-            expires_at,
-            encoded_sig,
-            key_pair_id
+            full_url, expires_at, encoded_sig, key_pair_id
         );
 
         debug!(

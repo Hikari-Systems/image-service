@@ -16,7 +16,9 @@ pub struct ServerConfig {
     pub port: u16,
 }
 
-fn default_port() -> u16 { 3000 }
+fn default_port() -> u16 {
+    3000
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct LogConfig {
@@ -24,7 +26,9 @@ pub struct LogConfig {
     pub level: String,
 }
 
-fn default_log_level() -> String { "info".to_string() }
+fn default_log_level() -> String {
+    "info".to_string()
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ImageMetadataConfig {
@@ -34,8 +38,12 @@ pub struct ImageMetadataConfig {
     pub storage: String,
 }
 
-fn default_metadata_path() -> String { "/metadata".to_string() }
-fn default_storage() -> String { "file".to_string() }
+fn default_metadata_path() -> String {
+    "/metadata".to_string()
+}
+fn default_storage() -> String {
+    "file".to_string()
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ImageMagickConfig {
@@ -43,7 +51,9 @@ pub struct ImageMagickConfig {
     pub bin: String,
 }
 
-fn default_magick_bin() -> String { "/usr/local/bin/magick".to_string() }
+fn default_magick_bin() -> String {
+    "/usr/local/bin/magick".to_string()
+}
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct S3Config {
@@ -77,7 +87,9 @@ impl S3Config {
     }
 }
 
-fn default_region() -> String { "us-east-1".to_string() }
+fn default_region() -> String {
+    "us-east-1".to_string()
+}
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct CloudfrontConfig {
@@ -97,8 +109,9 @@ pub struct CloudfrontConfig {
     pub private_key_file: String,
 }
 
-fn default_expiry() -> i64 { 10100 }
-
+fn default_expiry() -> i64 {
+    10100
+}
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct SizeConfig {
@@ -206,12 +219,24 @@ impl TranscodeSweepConfig {
     }
 }
 
-fn default_processing() -> String { "deferred".to_string() }
-fn default_memory_limit() -> u32 { 32 }
-fn default_map_limit() -> u32 { 32 }
-fn default_sweep_interval() -> u32 { 60 }
-fn default_sweep_batch() -> u32 { 2 }
-fn default_sweep_lease() -> u32 { 300 }
+fn default_processing() -> String {
+    "deferred".to_string()
+}
+fn default_memory_limit() -> u32 {
+    32
+}
+fn default_map_limit() -> u32 {
+    32
+}
+fn default_sweep_interval() -> u32 {
+    60
+}
+fn default_sweep_batch() -> u32 {
+    2
+}
+fn default_sweep_lease() -> u32 {
+    300
+}
 
 impl ResizeConfig {
     pub fn size_keys_for_category(&self, category: &str) -> Vec<String> {
@@ -270,18 +295,33 @@ pub struct AppConfig {
 }
 
 impl Default for ServerConfig {
-    fn default() -> Self { Self { port: default_port() } }
+    fn default() -> Self {
+        Self {
+            port: default_port(),
+        }
+    }
 }
 impl Default for LogConfig {
-    fn default() -> Self { Self { level: default_log_level() } }
+    fn default() -> Self {
+        Self {
+            level: default_log_level(),
+        }
+    }
 }
 impl Default for ImageMetadataConfig {
     fn default() -> Self {
-        Self { parent_path: default_metadata_path(), storage: default_storage() }
+        Self {
+            parent_path: default_metadata_path(),
+            storage: default_storage(),
+        }
     }
 }
 impl Default for ImageMagickConfig {
-    fn default() -> Self { Self { bin: default_magick_bin() } }
+    fn default() -> Self {
+        Self {
+            bin: default_magick_bin(),
+        }
+    }
 }
 
 impl AppConfig {
@@ -306,7 +346,10 @@ mod tests {
     fn resize_with_sets(sets: &[(&str, &str)]) -> ResizeConfig {
         ResizeConfig {
             size_keys: "small,medium,large".to_string(),
-            scaling_sets: sets.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            scaling_sets: sets
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             ..Default::default()
         }
     }
@@ -314,16 +357,28 @@ mod tests {
     #[test]
     fn scaling_set_lookup_ignores_case() {
         // Env overrides keep camelCase keys; uploads look categories up lowercased.
-        let r = resize_with_sets(&[("blenderFrame", "frame480,frame960"), ("auctionphoto", "a,b")]);
-        assert_eq!(r.size_keys_for_category("blenderframe"), ["frame480", "frame960"]);
-        assert_eq!(r.size_keys_for_category("blenderFrame"), ["frame480", "frame960"]);
+        let r = resize_with_sets(&[
+            ("blenderFrame", "frame480,frame960"),
+            ("auctionphoto", "a,b"),
+        ]);
+        assert_eq!(
+            r.size_keys_for_category("blenderframe"),
+            ["frame480", "frame960"]
+        );
+        assert_eq!(
+            r.size_keys_for_category("blenderFrame"),
+            ["frame480", "frame960"]
+        );
         assert_eq!(r.size_keys_for_category("auctionphoto"), ["a", "b"]);
     }
 
     #[test]
     fn unknown_or_empty_category_falls_back_to_size_keys() {
         let r = resize_with_sets(&[("userIcon", "smallSquare,largeSquare")]);
-        assert_eq!(r.size_keys_for_category("nosuch"), ["small", "medium", "large"]);
+        assert_eq!(
+            r.size_keys_for_category("nosuch"),
+            ["small", "medium", "large"]
+        );
         assert_eq!(r.size_keys_for_category(""), ["small", "medium", "large"]);
     }
 }

@@ -33,8 +33,8 @@ use std::time::Duration;
 use chrono::{Duration as ChronoDuration, Utc};
 use tracing::{debug, error, info, warn};
 
-use crate::helpers::transcode::{full_transcode, ResizeSelection, ORIGINAL_KEY};
 use crate::config::ResizeConfig;
+use crate::helpers::transcode::{full_transcode, ResizeSelection, ORIGINAL_KEY};
 use crate::models::image::{ExpectedVariants, ImageRecord};
 use crate::state::AppState;
 
@@ -104,7 +104,9 @@ pub async fn run_once(
             // Unreadable /proc/loadavg means we cannot tell, and refusing to work
             // on a machine that might be idle is worse than the throttle not
             // applying. Warn and continue.
-            None => warn!("transcode sweep: could not read /proc/loadavg; ignoring the load ceiling"),
+            None => {
+                warn!("transcode sweep: could not read /proc/loadavg; ignoring the load ceiling")
+            }
         }
     }
 
@@ -230,7 +232,9 @@ fn expected_variants(resize: &ResizeConfig) -> (Vec<ExpectedVariants>, i32) {
         .keys()
         .map(|category| ExpectedVariants {
             category: category.to_lowercase(),
-            count: resize.size_keys_for_category(&category.to_lowercase()).len() as i32,
+            count: resize
+                .size_keys_for_category(&category.to_lowercase())
+                .len() as i32,
         })
         .collect();
     let default_expected = resize.size_keys_for_category("").len() as i32;
@@ -292,7 +296,10 @@ mod tests {
             resized_files: Some(
                 sizes
                     .iter()
-                    .map(|s| ScaledImage { size: s.to_string(), s3_path: format!("p-{s}") })
+                    .map(|s| ScaledImage {
+                        size: s.to_string(),
+                        s3_path: format!("p-{s}"),
+                    })
                     .collect(),
             ),
             ..Default::default()
@@ -303,7 +310,13 @@ mod tests {
     /// `?defer=original`. The sweep must ask for the original and nothing else.
     #[test]
     fn a_deferred_original_is_the_only_thing_left_to_do() {
-        let cfg = resize_config("small,medium", &[("auctionphoto", "auctionThumbnail,auctionMedium,auctionLarge")]);
+        let cfg = resize_config(
+            "small,medium",
+            &[(
+                "auctionphoto",
+                "auctionThumbnail,auctionMedium,auctionLarge",
+            )],
+        );
         let img = image(
             "auctionPhoto",
             &["auctionThumbnail", "auctionMedium", "auctionLarge"],
@@ -316,7 +329,10 @@ mod tests {
     /// work it already paid for on every pass.
     #[test]
     fn a_complete_image_has_nothing_missing() {
-        let cfg = resize_config("small,medium", &[("auctionphoto", "auctionThumbnail,auctionMedium")]);
+        let cfg = resize_config(
+            "small,medium",
+            &[("auctionphoto", "auctionThumbnail,auctionMedium")],
+        );
         let img = image("auctionPhoto", &["auctionThumbnail", "auctionMedium"], true);
         assert!(missing_variants(&cfg, &img).is_empty());
     }
@@ -325,9 +341,15 @@ mod tests {
     /// scaling set is resolved, so `auctionPhoto` must find `auctionphoto`.
     #[test]
     fn the_category_is_matched_case_insensitively() {
-        let cfg = resize_config("small", &[("auctionphoto", "auctionThumbnail,auctionMedium")]);
+        let cfg = resize_config(
+            "small",
+            &[("auctionphoto", "auctionThumbnail,auctionMedium")],
+        );
         let img = image("AuctionPhoto", &["auctionThumbnail"], true);
-        assert_eq!(missing_variants(&cfg, &img), vec!["auctionMedium".to_string()]);
+        assert_eq!(
+            missing_variants(&cfg, &img),
+            vec!["auctionMedium".to_string()]
+        );
     }
 
     /// An unconfigured category falls back to the global `sizeKeys`.
@@ -342,10 +364,19 @@ mod tests {
     /// original would leave every finished row one short and re-claim it forever.
     #[test]
     fn expected_counts_exclude_the_original() {
-        let cfg = resize_config("small,medium", &[("auctionphoto", "auctionThumbnail,auctionMedium,auctionLarge")]);
+        let cfg = resize_config(
+            "small,medium",
+            &[(
+                "auctionphoto",
+                "auctionThumbnail,auctionMedium,auctionLarge",
+            )],
+        );
         let (expected, default_expected) = expected_variants(&cfg);
         assert_eq!(default_expected, 2, "global sizeKeys has two entries");
-        let ap = expected.iter().find(|e| e.category == "auctionphoto").unwrap();
+        let ap = expected
+            .iter()
+            .find(|e| e.category == "auctionphoto")
+            .unwrap();
         assert_eq!(ap.count, 3, "three size keys, original not counted");
     }
 }

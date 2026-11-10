@@ -14,18 +14,18 @@ use crate::state::AppState;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     // Transcode must come before /{id} to avoid being swallowed by the wildcard segment.
-    cfg.route("/api/image/{id}/transcode", web::post().to(transcode_handler))
-        .route("/api/image/r/{id}/{size}", web::get().to(get_redirect))
-        .route("/api/image/s/{id}/{size}", web::get().to(get_signed_url))
-        .route("/api/image/{id}", web::get().to(get_image))
-        .route("/api/image/{category}", web::post().to(upload_image));
+    cfg.route(
+        "/api/image/{id}/transcode",
+        web::post().to(transcode_handler),
+    )
+    .route("/api/image/r/{id}/{size}", web::get().to(get_redirect))
+    .route("/api/image/s/{id}/{size}", web::get().to(get_signed_url))
+    .route("/api/image/{id}", web::get().to(get_image))
+    .route("/api/image/{category}", web::post().to(upload_image));
 }
 
 /// GET /api/image/:id — return image descriptor JSON with a pre-signed original URL.
-async fn get_image(
-    path: web::Path<String>,
-    state: web::Data<AppState>,
-) -> HttpResponse {
+async fn get_image(path: web::Path<String>, state: web::Data<AppState>) -> HttpResponse {
     let id = path.into_inner();
     debug!("Get by id: {}", id);
     match state.backend.get(&id).await {
@@ -33,16 +33,14 @@ async fn get_image(
             error!("Error getting image id={}: {}", id, e);
             HttpResponse::InternalServerError().finish()
         }
-        Ok(record) => {
-            match get_image_descriptor_with_download_url(record, &state).await {
-                Err(e) => {
-                    error!("Error building descriptor for id={}: {}", id, e);
-                    HttpResponse::InternalServerError().finish()
-                }
-                Ok(None) => HttpResponse::NotFound().body("Not found"),
-                Ok(Some(desc)) => HttpResponse::Ok().json(desc),
+        Ok(record) => match get_image_descriptor_with_download_url(record, &state).await {
+            Err(e) => {
+                error!("Error building descriptor for id={}: {}", id, e);
+                HttpResponse::InternalServerError().finish()
             }
-        }
+            Ok(None) => HttpResponse::NotFound().body("Not found"),
+            Ok(Some(desc)) => HttpResponse::Ok().json(desc),
+        },
     }
 }
 
@@ -113,14 +111,20 @@ async fn resolve_image_url(
 
     // 2. Fall back to originalS3Path
     if let Some(ref orig) = image.original_s3_path {
-        debug!("No resized version for size {} – serving original for {:?}", size, image.id);
+        debug!(
+            "No resized version for size {} – serving original for {:?}",
+            size, image.id
+        );
         let signed = state.cf.get_signed_url(orig)?;
         return Ok(Some(signed));
     }
 
     // 3. Fall back to downloadedS3Path
     if let Some(ref dl) = image.downloaded_s3_path {
-        debug!("No processed version for size {} – serving downloaded for {:?}", size, image.id);
+        debug!(
+            "No processed version for size {} – serving downloaded for {:?}",
+            size, image.id
+        );
         let signed = state.cf.get_signed_url(dl)?;
         return Ok(Some(signed));
     }
@@ -128,7 +132,10 @@ async fn resolve_image_url(
     // 4. Fall back to sourceUrl
     if let Some(ref src) = image.source_url {
         if !src.is_empty() {
-            debug!("No downloaded version – serving source URL for {:?}", image.id);
+            debug!(
+                "No downloaded version – serving source URL for {:?}",
+                image.id
+            );
             return Ok(Some(src.clone()));
         }
     }
@@ -179,7 +186,10 @@ async fn transcode_handler(
             return HttpResponse::BadRequest().body(msg);
         }
     };
-    debug!("Transcode requested for id={} selection={:?}", id, selection);
+    debug!(
+        "Transcode requested for id={} selection={:?}",
+        id, selection
+    );
 
     match state.backend.get(&id).await {
         Err(e) => {

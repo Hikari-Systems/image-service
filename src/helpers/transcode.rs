@@ -87,18 +87,29 @@ impl ResizeSelection {
     pub fn parse(force: Option<&str>, defer: Option<&str>, default_immediate: bool) -> Self {
         let immediate = match force.map(str::trim) {
             None | Some("") => {
-                if default_immediate { Immediate::All } else { Immediate::None }
+                if default_immediate {
+                    Immediate::All
+                } else {
+                    Immediate::None
+                }
             }
             Some(v) if is_truthy(v) => Immediate::All,
             // A falsey value historically did not disable anything when the service
             // was configured for immediate processing — the old check was an `||`.
             Some(v) if is_falsey(v) => {
-                if default_immediate { Immediate::All } else { Immediate::None }
+                if default_immediate {
+                    Immediate::All
+                } else {
+                    Immediate::None
+                }
             }
             Some(v) => Immediate::Only(split_keys(v)),
         };
 
-        Self { immediate, deferred: defer.map(split_keys).unwrap_or_default() }
+        Self {
+            immediate,
+            deferred: defer.map(split_keys).unwrap_or_default(),
+        }
     }
 
     /// Every key named in either parameter, for validation against the config.
@@ -130,140 +141,6 @@ impl ResizeSelection {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const SIZES: [&str; 3] = ["small", "medium", "large"];
-
-    /// Every variant this selection would produce, original included, in config order.
-    fn produced(sel: &ResizeSelection) -> Vec<&'static str> {
-        std::iter::once(ORIGINAL_KEY)
-            .chain(SIZES)
-            .filter(|k| sel.wants(k))
-            .collect()
-    }
-
-    /// The bug this exists to prevent, measured in production: an uploader that
-    /// does not set the multipart part's content type gets `application/octet-stream`
-    /// from its HTTP client, that lands in S3, and the deferred-variant pass then
-    /// re-downloads the source and is told `application/octet-stream`. Judging on
-    /// mime alone re-encoded a 3.3 MB JPEG into a 13.8 MB PNG.
-    #[test]
-    fn a_generic_mime_falls_back_to_the_extension() {
-        assert!(!servable_as_original("application/octet-stream"));
-        assert_eq!(servable_mime_for_extension(".jpg"), Some("image/jpeg"));
-        assert_eq!(servable_mime_for_extension("jpeg"), Some("image/jpeg"));
-        assert_eq!(servable_mime_for_extension(".PNG"), Some("image/png"));
-    }
-
-    /// A format a browser cannot render must still reach the configured target, or
-    /// the "original" would be an unservable blob under a servable extension.
-    #[test]
-    fn an_unservable_extension_gets_no_shortcut() {
-        for ext in [".heic", ".tif", ".tiff", ".bmp", ".bin", ""] {
-            assert_eq!(servable_mime_for_extension(ext), None, "{ext} must not shortcut");
-        }
-    }
-
-    /// A declared, servable type always wins over the extension.
-    #[test]
-    fn a_declared_type_is_preferred() {
-        assert!(servable_as_original("image/webp"));
-        assert!(servable_as_original("image/png"));
-    }
-
-    #[test]
-    fn absent_param_follows_configured_mode() {
-        assert!(produced(&ResizeSelection::parse(None, None, false)).is_empty());
-        assert_eq!(
-            produced(&ResizeSelection::parse(None, None, true)),
-            ["original", "small", "medium", "large"]
-        );
-    }
-
-    #[test]
-    fn boolean_spellings_are_understood() {
-        for yes in ["TRUE", "true", "yes", "Y", "on", "1", "all"] {
-            assert_eq!(
-                produced(&ResizeSelection::parse(Some(yes), None, false)),
-                ["original", "small", "medium", "large"],
-                "{yes} should mean everything"
-            );
-        }
-        for no in ["false", "NO", "n", "off", "0", "none"] {
-            assert!(
-                produced(&ResizeSelection::parse(Some(no), None, false)).is_empty(),
-                "{no} should mean nothing"
-            );
-        }
-    }
-
-    #[test]
-    fn true_and_false_keep_their_historic_meaning() {
-        assert_eq!(
-            produced(&ResizeSelection::parse(Some("TRUE"), None, false)),
-            ["original", "small", "medium", "large"]
-        );
-        assert!(produced(&ResizeSelection::parse(Some("false"), None, false)).is_empty());
-        // The old check was an `||`, so `false` never disabled a service configured
-        // for immediate processing.
-        assert_eq!(
-            produced(&ResizeSelection::parse(Some("false"), None, true)),
-            ["original", "small", "medium", "large"]
-        );
-    }
-
-    #[test]
-    fn explicit_list_wins_over_configured_mode() {
-        assert_eq!(
-            produced(&ResizeSelection::parse(Some("original, small"), None, false)),
-            ["original", "small"]
-        );
-        assert_eq!(
-            produced(&ResizeSelection::parse(Some("small,large"), None, true)),
-            ["small", "large"]
-        );
-    }
-
-    #[test]
-    fn defer_subtracts_and_has_the_last_word() {
-        assert_eq!(
-            produced(&ResizeSelection::parse(Some("true"), Some("large"), false)),
-            ["original", "small", "medium"]
-        );
-        assert_eq!(
-            produced(&ResizeSelection::parse(None, Some("original"), true)),
-            ["small", "medium", "large"]
-        );
-        // Named in both: deferring is the more specific instruction.
-        assert_eq!(
-            produced(&ResizeSelection::parse(Some("small,large"), Some("large"), false)),
-            ["small"]
-        );
-    }
-
-    #[test]
-    fn wants_nothing_detects_an_empty_selection() {
-        let keys: Vec<String> = SIZES.iter().map(|s| s.to_string()).collect();
-        let empty = ResizeSelection::parse(Some("small"), Some("small"), false);
-        assert!(empty.wants_nothing(&keys));
-        assert!(!ResizeSelection::parse(Some("small"), None, false).wants_nothing(&keys));
-        // Only the original still counts as work to do.
-        assert!(!ResizeSelection::parse(Some("original"), None, false).wants_nothing(&keys));
-    }
-
-    #[test]
-    fn requested_keys_covers_both_params_for_validation() {
-        let sel = ResizeSelection::parse(Some("small, bogus"), Some("nope"), false);
-        assert_eq!(sel.requested_keys(), ["small", "bogus", "nope"]);
-        // `true` names no keys, so there is nothing to validate.
-        assert!(ResizeSelection::parse(Some("true"), None, false)
-            .requested_keys()
-            .is_empty());
-    }
-}
-
 /// Boolean spellings the parameter accepts, so that a caller writing `yes` or `1`
 /// gets what they plainly meant rather than a "no such size key" rejection. Only the
 /// literal `true` used to count, which quietly made every other spelling mean *false*;
@@ -290,6 +167,7 @@ fn split_keys(raw: &str) -> Vec<String> {
 
 /// Upload the local file to S3, upsert image metadata, then produce whichever
 /// variants `selection` asks for.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_image(
     local_source_path: &Path,
     source_extension: &str,
@@ -304,7 +182,11 @@ pub async fn process_image(
     let id = base.id.unwrap_or_else(Uuid::new_v4);
 
     let s3_path = format!("{}-{}{}", category, id, source_extension);
-    info!("S3 upload start: {} → {}", local_source_path.display(), s3_path);
+    info!(
+        "S3 upload start: {} → {}",
+        local_source_path.display(),
+        s3_path
+    );
     state
         .s3
         .save(local_source_path, &s3_path, source_mime_type)
@@ -421,7 +303,8 @@ async fn transcode_image(
     };
     let copy_source_as_original = source_mime.is_some() && !source_extension.is_empty();
 
-    let (orig_ext, orig_mime) = if let Some(mime) = source_mime.filter(|_| copy_source_as_original) {
+    let (orig_ext, orig_mime) = if let Some(mime) = source_mime.filter(|_| copy_source_as_original)
+    {
         (source_extension.to_string(), mime.to_string())
     } else {
         (
@@ -484,13 +367,19 @@ async fn transcode_image(
         info!("Original uploaded: {}", orig_dest_s3_path);
     } else {
         let orig_extra = cfg.resize.original.extra_opts.as_str();
-        info!("ImageMagick original start: src={}", local_source_path.display());
+        info!(
+            "ImageMagick original start: src={}",
+            local_source_path.display()
+        );
         let orig_resized = state
             .magick
             .resize_image(local_source_path, -1, -1, orig_extra, &orig_ext)
             .await
             .context("ImageMagick failed for original")?;
-        info!("ImageMagick original done, uploading: {}", orig_dest_s3_path);
+        info!(
+            "ImageMagick original done, uploading: {}",
+            orig_dest_s3_path
+        );
         state
             .s3
             .save(&orig_resized, &orig_dest_s3_path, &orig_mime)
@@ -514,9 +403,15 @@ async fn transcode_image(
     );
     let mut scaled: Vec<ScaledImage> = Vec::new();
     for size_key in &size_keys {
-        let si = scale_one(local_source_path.to_path_buf(), size_key.clone(), id, category.clone(), state)
-            .await
-            .with_context(|| format!("Size variant '{}' failed to transcode", size_key))?;
+        let si = scale_one(
+            local_source_path.to_path_buf(),
+            size_key.clone(),
+            id,
+            category.clone(),
+            state,
+        )
+        .await
+        .with_context(|| format!("Size variant '{}' failed to transcode", size_key))?;
         scaled.push(si);
     }
 
@@ -524,7 +419,10 @@ async fn transcode_image(
     // erase the ones an earlier pass stored.
     let mut resized_files = to_overwrite.resized_files.unwrap_or_default();
     for si in scaled {
-        match resized_files.iter_mut().find(|existing| existing.size == si.size) {
+        match resized_files
+            .iter_mut()
+            .find(|existing| existing.size == si.size)
+        {
             Some(existing) => *existing = si,
             None => resized_files.push(si),
         }
@@ -567,7 +465,11 @@ async fn scale_one(
         .with_context(|| format!("No size config found for key '{}'", size_key))?;
 
     let ext = size_cfg.extension.as_deref().unwrap_or(".jpg").to_string();
-    let mime = size_cfg.mime_type.as_deref().unwrap_or("image/jpeg").to_string();
+    let mime = size_cfg
+        .mime_type
+        .as_deref()
+        .unwrap_or("image/jpeg")
+        .to_string();
     let w = size_cfg.width.unwrap_or(0);
     let h = size_cfg.height.unwrap_or(0);
     let extra_opts = size_cfg.extra_opts.clone();
@@ -578,7 +480,10 @@ async fn scale_one(
         .resize_image(&source, w, h, &extra_opts, &ext)
         .await
         .with_context(|| format!("ImageMagick failed for size '{}'", size_key))?;
-    info!("scale_one[{}]: ImageMagick done → {:?}", size_key, scaled_path);
+    info!(
+        "scale_one[{}]: ImageMagick done → {:?}",
+        size_key, scaled_path
+    );
 
     let s3_key = format!("{}-{}-{}{}", category, id, size_key, ext);
     info!("scale_one[{}]: S3 upload start → {}", size_key, s3_key);
@@ -639,8 +544,8 @@ pub async fn full_transcode(
 
     if let Some(ref src_url) = image_item.source_url.clone() {
         let ext = {
-            let parsed = url::Url::parse(src_url)
-                .unwrap_or_else(|_| url::Url::parse("http://x/").unwrap());
+            let parsed =
+                url::Url::parse(src_url).unwrap_or_else(|_| url::Url::parse("http://x/").unwrap());
             extension_from_path(parsed.path())
         };
         let cat = image_item
@@ -691,4 +596,150 @@ pub async fn full_transcode(
         "No downloadedS3Path and no sourceUrl for image {:?}",
         image_item.id
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SIZES: [&str; 3] = ["small", "medium", "large"];
+
+    /// Every variant this selection would produce, original included, in config order.
+    fn produced(sel: &ResizeSelection) -> Vec<&'static str> {
+        std::iter::once(ORIGINAL_KEY)
+            .chain(SIZES)
+            .filter(|k| sel.wants(k))
+            .collect()
+    }
+
+    /// The bug this exists to prevent, measured in production: an uploader that
+    /// does not set the multipart part's content type gets `application/octet-stream`
+    /// from its HTTP client, that lands in S3, and the deferred-variant pass then
+    /// re-downloads the source and is told `application/octet-stream`. Judging on
+    /// mime alone re-encoded a 3.3 MB JPEG into a 13.8 MB PNG.
+    #[test]
+    fn a_generic_mime_falls_back_to_the_extension() {
+        assert!(!servable_as_original("application/octet-stream"));
+        assert_eq!(servable_mime_for_extension(".jpg"), Some("image/jpeg"));
+        assert_eq!(servable_mime_for_extension("jpeg"), Some("image/jpeg"));
+        assert_eq!(servable_mime_for_extension(".PNG"), Some("image/png"));
+    }
+
+    /// A format a browser cannot render must still reach the configured target, or
+    /// the "original" would be an unservable blob under a servable extension.
+    #[test]
+    fn an_unservable_extension_gets_no_shortcut() {
+        for ext in [".heic", ".tif", ".tiff", ".bmp", ".bin", ""] {
+            assert_eq!(
+                servable_mime_for_extension(ext),
+                None,
+                "{ext} must not shortcut"
+            );
+        }
+    }
+
+    /// A declared, servable type always wins over the extension.
+    #[test]
+    fn a_declared_type_is_preferred() {
+        assert!(servable_as_original("image/webp"));
+        assert!(servable_as_original("image/png"));
+    }
+
+    #[test]
+    fn absent_param_follows_configured_mode() {
+        assert!(produced(&ResizeSelection::parse(None, None, false)).is_empty());
+        assert_eq!(
+            produced(&ResizeSelection::parse(None, None, true)),
+            ["original", "small", "medium", "large"]
+        );
+    }
+
+    #[test]
+    fn boolean_spellings_are_understood() {
+        for yes in ["TRUE", "true", "yes", "Y", "on", "1", "all"] {
+            assert_eq!(
+                produced(&ResizeSelection::parse(Some(yes), None, false)),
+                ["original", "small", "medium", "large"],
+                "{yes} should mean everything"
+            );
+        }
+        for no in ["false", "NO", "n", "off", "0", "none"] {
+            assert!(
+                produced(&ResizeSelection::parse(Some(no), None, false)).is_empty(),
+                "{no} should mean nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn true_and_false_keep_their_historic_meaning() {
+        assert_eq!(
+            produced(&ResizeSelection::parse(Some("TRUE"), None, false)),
+            ["original", "small", "medium", "large"]
+        );
+        assert!(produced(&ResizeSelection::parse(Some("false"), None, false)).is_empty());
+        // The old check was an `||`, so `false` never disabled a service configured
+        // for immediate processing.
+        assert_eq!(
+            produced(&ResizeSelection::parse(Some("false"), None, true)),
+            ["original", "small", "medium", "large"]
+        );
+    }
+
+    #[test]
+    fn explicit_list_wins_over_configured_mode() {
+        assert_eq!(
+            produced(&ResizeSelection::parse(
+                Some("original, small"),
+                None,
+                false
+            )),
+            ["original", "small"]
+        );
+        assert_eq!(
+            produced(&ResizeSelection::parse(Some("small,large"), None, true)),
+            ["small", "large"]
+        );
+    }
+
+    #[test]
+    fn defer_subtracts_and_has_the_last_word() {
+        assert_eq!(
+            produced(&ResizeSelection::parse(Some("true"), Some("large"), false)),
+            ["original", "small", "medium"]
+        );
+        assert_eq!(
+            produced(&ResizeSelection::parse(None, Some("original"), true)),
+            ["small", "medium", "large"]
+        );
+        // Named in both: deferring is the more specific instruction.
+        assert_eq!(
+            produced(&ResizeSelection::parse(
+                Some("small,large"),
+                Some("large"),
+                false
+            )),
+            ["small"]
+        );
+    }
+
+    #[test]
+    fn wants_nothing_detects_an_empty_selection() {
+        let keys: Vec<String> = SIZES.iter().map(|s| s.to_string()).collect();
+        let empty = ResizeSelection::parse(Some("small"), Some("small"), false);
+        assert!(empty.wants_nothing(&keys));
+        assert!(!ResizeSelection::parse(Some("small"), None, false).wants_nothing(&keys));
+        // Only the original still counts as work to do.
+        assert!(!ResizeSelection::parse(Some("original"), None, false).wants_nothing(&keys));
+    }
+
+    #[test]
+    fn requested_keys_covers_both_params_for_validation() {
+        let sel = ResizeSelection::parse(Some("small, bogus"), Some("nope"), false);
+        assert_eq!(sel.requested_keys(), ["small", "bogus", "nope"]);
+        // `true` names no keys, so there is nothing to validate.
+        assert!(ResizeSelection::parse(Some("true"), None, false)
+            .requested_keys()
+            .is_empty());
+    }
 }

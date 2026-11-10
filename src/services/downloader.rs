@@ -26,11 +26,7 @@ impl DownloaderService {
 
     /// Download `url` to `dest` (which should already include the file extension).
     /// Returns the local path and detected MIME type.
-    pub async fn download_image(
-        &self,
-        url: &str,
-        dest: &Path,
-    ) -> Result<DownloadedFile> {
+    pub async fn download_image(&self, url: &str, dest: &Path) -> Result<DownloadedFile> {
         debug!("Downloading {} → {:?}", url, dest);
         let response = self
             .client
